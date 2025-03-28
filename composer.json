@@ -30,6 +30,9 @@
             "phpstan/extension-installer": true
         }
     },
+    "bin": [
+        "bin/pr-code-check.php"
+    ],
     "scripts": {
         "unit-tests": "php ./vendor/bin/codecept run wpunit --skip-group Full_Coverage",
         "unit-tests-full": "php ./vendor/bin/codecept run wpunit",
@@ -37,8 +40,8 @@
         "phpcs": "./vendor/bin/phpcs -s --standard=Uncanny-Automator --warning-severity=1",
         "phpcsOnSave": "./vendor/bin/phpcs -s -v --standard=Uncanny-Automator --warning-severity=1 --report=full",
         "phpcbf": "./vendor/bin/phpcbf -s --standard=Uncanny-Automator",
-        "phpcs:pr": "FILES=$(git diff --name-only origin/pre-release... | grep '\\.php$' || true) && [ -n \"$FILES\" ] && composer phpcs -- $FILES || echo 'No PHP files to lint.'",
-        "phpcbf:pr": "FILES=$(git diff --name-only origin/pre-release... | grep '\\.php$' || true) && [ -n \"$FILES\" ] && composer phpcbf -- $FILES || echo 'No PHP files to fix.'",
+        "phpcs:pr": "php ./bin/pr-code-check.php phpcs",
+        "phpcbf:pr": "php ./bin/pr-code-check.php phpcbf",
         "post-install-cmd": [
             "@php -r \"if (PHP_OS_FAMILY === 'Windows') { exit(0); }\"",
             "chmod +x bin/pr-code-check.php"
@@ -47,5 +50,7 @@
             "@php -r \"if (PHP_OS_FAMILY === 'Windows') { exit(0); }\"",
             "chmod +x bin/pr-code-check.php"
         ]
-    }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 } 

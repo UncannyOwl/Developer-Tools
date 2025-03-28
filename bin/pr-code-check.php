@@ -19,8 +19,16 @@ $baseDir = getcwd();
 $vendorDir = $baseDir . DIRECTORY_SEPARATOR . 'vendor';
 
 // Get the PHPCS binary path
-$phpcsBin = $vendorDir . DIRECTORY_SEPARATOR . 'uocs' . DIRECTORY_SEPARATOR . 'uncanny-owl-coding-standards' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpcs';
-$phpcbfBin = $vendorDir . DIRECTORY_SEPARATOR . 'uocs' . DIRECTORY_SEPARATOR . 'uncanny-owl-coding-standards' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpcbf';
+$binPath = $vendorDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR;
+if (!file_exists($binPath . 'phpcs')) {
+    // Try the path with UOCS
+    $binPath = $vendorDir . DIRECTORY_SEPARATOR . 'uocs' . DIRECTORY_SEPARATOR . 
+               'uncanny-owl-coding-standards' . DIRECTORY_SEPARATOR . 'vendor' . 
+               DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR;
+}
+
+$phpcsBin = $binPath . 'phpcs';
+$phpcbfBin = $binPath . 'phpcbf';
 
 // Get changed PHP files
 $output = [];
@@ -32,9 +40,27 @@ if ($returnVar !== 0) {
     exit(1);
 }
 
-// Filter PHP files
+// Filter PHP files and exclude tests, vendor, and node_modules
 $phpFiles = array_filter($output, function($file) {
-    return preg_match('/\.php$/', $file);
+    // Only include PHP files
+    if (!preg_match('/\.php$/', $file)) {
+        return false;
+    }
+    
+    // Exclude tests, vendor, and node_modules directories
+    $excludePatterns = [
+        '/\/tests\//',      // any level /tests/
+        '/\/vendor\//',     // any level /vendor/
+        '/\/node_modules\//'// any level /node_modules/
+    ];
+    
+    foreach ($excludePatterns as $pattern) {
+        if (preg_match($pattern, $file)) {
+            return false;
+        }
+    }
+    
+    return true;
 });
 
 if (empty($phpFiles)) {
