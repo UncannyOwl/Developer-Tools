@@ -1,7 +1,7 @@
 {
     "name": "uncanny-owl/automator-dev-tools",
     "description": "Centralized development tools for Uncanny Automator plugins",
-    "type": "composer-plugin",
+    "type": "library",
     "license": "GPL-3.0-or-later",
     "authors": [
         {
