@@ -10,9 +10,6 @@
         }
     ],
     "require": {
-        "php": ">=7.4"
-    },
-    "require-dev": {
         "symfony/string": "^5",
         "lucatume/wp-browser": "^3.2.3",
         "codeception/module-asserts": "^1.0",
