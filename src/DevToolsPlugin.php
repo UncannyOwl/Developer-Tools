@@ -43,7 +43,9 @@ class DevToolsPlugin implements PluginInterface, EventSubscriberInterface {
             if (is_string($script)) {
                 $scriptPath = $devToolsPath . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'script.php';
                 $rootPackage->setScripts([
-                    $name => 'php "' . $scriptPath . '" ' . $script
+                    $name => [
+                        'php "' . $scriptPath . '" ' . $script . ' "$@"'
+                    ]
                 ]);
             }
         }
