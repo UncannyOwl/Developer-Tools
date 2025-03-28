@@ -1,6 +1,6 @@
 {
-    "name": "uncanny-owl/automator-dev-tools",
-    "description": "Centralized development tools for Uncanny Automator plugins",
+    "name": "uncanny-owl/developer-tools",
+    "description": "Centralized development tools for Uncanny Owl plugins",
     "type": "library",
     "license": "GPL-3.0-or-later",
     "authors": [
