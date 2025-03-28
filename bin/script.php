@@ -11,6 +11,9 @@ if ($argc < 2) {
 $command = $argv[1];
 $rootVendorDir = dirname(dirname(dirname(__DIR__)));
 
+// Get additional arguments
+$args = array_slice($argv, 2);
+
 // Helper function to get platform-specific path
 function getPlatformPath($path) {
     return str_replace('/', DIRECTORY_SEPARATOR, $path);
@@ -48,17 +51,26 @@ function executeCommand($command) {
 switch ($command) {
     case 'phpcs':
         $phpcsPath = getPlatformPath("$rootVendorDir/bin/phpcs");
-        executeCommand("php \"$phpcsPath\" -s --standard=Uncanny-Automator --warning-severity=1");
+        $argsList = implode(' ', array_map(function($arg) {
+            return '"' . $arg . '"';
+        }, $args));
+        executeCommand("php \"$phpcsPath\" -s --standard=Uncanny-Automator --warning-severity=1 $argsList");
         break;
         
     case 'phpcsOnSave':
         $phpcsPath = getPlatformPath("$rootVendorDir/bin/phpcs");
-        executeCommand("php \"$phpcsPath\" -s -v --standard=Uncanny-Automator --warning-severity=1 --report=full");
+        $argsList = implode(' ', array_map(function($arg) {
+            return '"' . $arg . '"';
+        }, $args));
+        executeCommand("php \"$phpcsPath\" -s -v --standard=Uncanny-Automator --warning-severity=1 --report=full $argsList");
         break;
         
     case 'phpcbf':
         $phpcbfPath = getPlatformPath("$rootVendorDir/bin/phpcbf");
-        executeCommand("php \"$phpcbfPath\" -s --standard=Uncanny-Automator");
+        $argsList = implode(' ', array_map(function($arg) {
+            return '"' . $arg . '"';
+        }, $args));
+        executeCommand("php \"$phpcbfPath\" -s --standard=Uncanny-Automator $argsList");
         break;
         
     case 'phpcs:pr':
