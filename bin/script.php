@@ -9,7 +9,7 @@ if ($argc < 2) {
 }
 
 $command = $argv[1];
-$vendorDir = dirname(dirname(__DIR__));
+$rootVendorDir = dirname(dirname(dirname(__DIR__)));
 
 // Helper function to get platform-specific path
 function getPlatformPath($path) {
@@ -47,24 +47,24 @@ function executeCommand($command) {
 
 switch ($command) {
     case 'phpcs':
-        $phpcsPath = getPlatformPath("$vendorDir/bin/phpcs");
+        $phpcsPath = getPlatformPath("$rootVendorDir/bin/phpcs");
         executeCommand("php \"$phpcsPath\" -s --standard=Uncanny-Automator --warning-severity=1");
         break;
         
     case 'phpcsOnSave':
-        $phpcsPath = getPlatformPath("$vendorDir/bin/phpcs");
+        $phpcsPath = getPlatformPath("$rootVendorDir/bin/phpcs");
         executeCommand("php \"$phpcsPath\" -s -v --standard=Uncanny-Automator --warning-severity=1 --report=full");
         break;
         
     case 'phpcbf':
-        $phpcbfPath = getPlatformPath("$vendorDir/bin/phpcbf");
+        $phpcbfPath = getPlatformPath("$rootVendorDir/bin/phpcbf");
         executeCommand("php \"$phpcbfPath\" -s --standard=Uncanny-Automator");
         break;
         
     case 'phpcs:pr':
         $files = getGitDiffFiles();
         if (!empty($files)) {
-            $phpcsPath = getPlatformPath("$vendorDir/bin/phpcs");
+            $phpcsPath = getPlatformPath("$rootVendorDir/bin/phpcs");
             $filesList = implode(' ', array_map(function($file) {
                 return '"' . $file . '"';
             }, $files));
@@ -77,7 +77,7 @@ switch ($command) {
     case 'phpcbf:pr':
         $files = getGitDiffFiles();
         if (!empty($files)) {
-            $phpcbfPath = getPlatformPath("$vendorDir/bin/phpcbf");
+            $phpcbfPath = getPlatformPath("$rootVendorDir/bin/phpcbf");
             $filesList = implode(' ', array_map(function($file) {
                 return '"' . $file . '"';
             }, $files));
@@ -88,17 +88,17 @@ switch ($command) {
         break;
         
     case 'unit-tests':
-        $codeceptPath = getPlatformPath("$vendorDir/bin/codecept");
+        $codeceptPath = getPlatformPath("$rootVendorDir/bin/codecept");
         executeCommand("php \"$codeceptPath\" run wpunit --skip-group Full_Coverage");
         break;
         
     case 'unit-tests-full':
-        $codeceptPath = getPlatformPath("$vendorDir/bin/codecept");
+        $codeceptPath = getPlatformPath("$rootVendorDir/bin/codecept");
         executeCommand("php \"$codeceptPath\" run wpunit");
         break;
         
     case 'unit-tests:coverage':
-        $codeceptPath = getPlatformPath("$vendorDir/bin/codecept");
+        $codeceptPath = getPlatformPath("$rootVendorDir/bin/codecept");
         executeCommand("php \"$codeceptPath\" run wpunit --coverage --coverage-html --xml");
         break;
         
