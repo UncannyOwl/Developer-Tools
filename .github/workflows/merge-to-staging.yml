@@ -114,7 +114,6 @@ jobs:
               
               if [[ "$is_pr" == "true" ]]; then
                 gh pr comment "$INPUT_PR" --body "✅ Successfully merged to $TARGET_BRANCH branch"
-                gh pr close "$INPUT_PR" --comment "PR has been merged to $TARGET_BRANCH"
               fi
               return 0
             else
