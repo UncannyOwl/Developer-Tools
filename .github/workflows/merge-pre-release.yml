@@ -63,6 +63,18 @@ jobs:
           INPUT_PR: ${{ inputs.pr_number || github.event.inputs.pr_number }}
           INPUT_BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name }}
         run: |
+          # Configure git user from PR author or use default
+          if [[ -n "$INPUT_PR" ]]; then
+            PR_INFO=$(gh pr view "$INPUT_PR" --json author)
+            AUTHOR_NAME=$(echo "$PR_INFO" | jq -r '.author.login')
+            AUTHOR_EMAIL="$AUTHOR_NAME@users.noreply.github.com"
+            git config --global user.name "$AUTHOR_NAME"
+            git config --global user.email "$AUTHOR_EMAIL"
+          else
+            git config --global user.name "GitHub Actions Bot"
+            git config --global user.email "actions@github.com"
+          fi
+
           cat <<'EOF' > merge-script.sh
           #!/bin/bash
 
@@ -108,10 +120,18 @@ jobs:
             merge_into_branch "$INPUT_BRANCH"
 
           else
+            # Set git config for automated PR processing
+            git config --global user.name "GitHub Actions Bot"
+            git config --global user.email "actions@github.com"
+
             echo "Fetching open PRs..."
-            prs=$(gh pr list --state open --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')
-            while IFS=$'\t' read -r pr_number head_ref; do
-              echo -e "\nProcessing PR #$pr_number ($head_ref)..."
+            prs=$(gh pr list --state open --json number,headRefName,author --jq '.[] | [.number, .headRefName, .author.login] | @tsv')
+            while IFS=$'\t' read -r pr_number head_ref author; do
+              echo -e "\nProcessing PR #$pr_number ($head_ref) by $author..."
+              # Update git config for each PR author
+              git config --global user.name "$author"
+              git config --global user.email "$author@users.noreply.github.com"
+              
               if merge_into_branch "$head_ref" "$pr_number"; then
                 echo "✅ Merged into #$pr_number"
               else
