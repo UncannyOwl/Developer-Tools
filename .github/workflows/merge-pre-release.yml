@@ -1,6 +1,16 @@
 name: Merge pre-release into open PRs
 
 on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'PR number to merge pre-release into (optional)'
+        required: false
+        type: string
+      branch_name:
+        description: 'Branch name to merge pre-release into (optional)'
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       pr_number:
@@ -35,8 +45,8 @@ jobs:
       - name: Run Merge Script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_PR: ${{ github.event.inputs.pr_number }}
-          INPUT_BRANCH: ${{ github.event.inputs.branch_name }}
+          INPUT_PR: ${{ inputs.pr_number || github.event.inputs.pr_number }}
+          INPUT_BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name }}
         run: |
           cat <<'EOF' > merge-script.sh
           #!/bin/bash

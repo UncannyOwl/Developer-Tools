@@ -1,6 +1,21 @@
 name: Merge PR to Staging
 
 on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'PR number to merge to staging'
+        required: false
+        type: string
+      branch_name:
+        description: 'Branch name to merge to staging'
+        required: false
+        type: string
+      target_branch:
+        description: 'Target branch to merge into (default: staging)'
+        required: false
+        type: string
+        default: 'staging'
   workflow_dispatch:
     inputs:
       pr_number:
@@ -38,9 +53,9 @@ jobs:
       - name: Run Merge Script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_PR: ${{ github.event.inputs.pr_number }}
-          INPUT_BRANCH: ${{ github.event.inputs.branch_name }}
-          TARGET_BRANCH: ${{ github.event.inputs.target_branch || 'staging' }}
+          INPUT_PR: ${{ inputs.pr_number || github.event.inputs.pr_number }}
+          INPUT_BRANCH: ${{ inputs.branch_name || github.event.inputs.branch_name }}
+          TARGET_BRANCH: ${{ inputs.target_branch || github.event.inputs.target_branch || 'staging' }}
         run: |
           cat <<'EOF' > merge-script.sh
           #!/bin/bash
