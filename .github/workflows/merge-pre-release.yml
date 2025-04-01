@@ -1,9 +1,18 @@
 name: Merge pre-release into open PRs
 
 on:
-  workflow_dispatch: # manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to merge pre-release into (optional)'
+        required: false
+        type: string
+      branch_name:
+        description: 'Branch name to merge pre-release into (optional)'
+        required: false
+        type: string
   schedule:
-    - cron: '12 * * * *' # hourly; adjust as needed
+    - cron: '12 */12 * * *' # every 12 hours
 
 permissions:
   contents: write
@@ -16,63 +25,64 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 50 # Reduced from 0 for better performance while still maintaining enough history
+          fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+      - name: Setup GitHub CLI
+        run: |
+          sudo apt update
+          sudo apt install -y gh jq
 
-      - name: Install GitHub CLI
-        uses: cli/cli-action@v2
-
-      - name: Merge pre-release into all open PRs
+      - name: Run Merge Script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PR: ${{ github.event.inputs.pr_number }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch_name }}
         run: |
-          echo "Fetching open PRs..."
-          prs=$(gh pr list --state open --json number,headRefName,url --jq '.[] | [.number, .headRefName, .url] | @tsv')
+          cat <<'EOF' > merge-script.sh
+          #!/bin/bash
 
-          if [ -z "$prs" ]; then
-            echo "No open PRs found."
-            exit 0
-          fi
+          set -e
 
-          while IFS=$'\t' read -r pr_number head_ref pr_url; do
-            echo "Processing PR #$pr_number (branch: $head_ref)..."
-            
-            # Fetch the branch with retry logic
-            max_retries=3
-            retry_count=1
-            while [ $retry_count -le $max_retries ]; do
-              if git fetch origin $head_ref; then
-                break
-              fi
-              echo "Failed to fetch branch (attempt $retry_count/$max_retries)"
-              retry_count=$((retry_count + 1))
-              sleep 5
-            done
-
-            if [ $retry_count -gt $max_retries ]; then
-              echo "❌ Failed to fetch PR #$pr_number after $max_retries attempts"
-              gh pr comment $pr_number --body "⚠️ Automated merge failed: Unable to fetch branch after multiple attempts. Please try again later."
-              continue
-            fi
-
-            git checkout $head_ref
-
-            echo "Merging pre-release into $head_ref..."
+          merge_into_branch() {
+            local branch=$1
+            echo "Checking out branch: $branch"
+            git fetch origin "$branch"
+            git checkout "$branch"
+            echo "Merging origin/pre-release into $branch"
             if git merge origin/pre-release --no-commit --no-ff; then
-              git commit -m "Auto-merged pre-release into $head_ref"
-              if git push origin $head_ref; then
-                echo "✅ Merged successfully into PR #$pr_number"
-              else
-                echo "❌ Failed to push changes to PR #$pr_number"
-                gh pr comment $pr_number --body "⚠️ Automated merge failed: Unable to push changes. Please try again later."
-              fi
+              git commit -m "Auto-merged pre-release into $branch"
+              git push origin "$branch"
+              echo "✅ Successfully merged pre-release into $branch"
             else
-              echo "❌ Conflict in PR #$pr_number ($head_ref), skipping..."
+              echo "❌ Merge conflict detected in $branch"
               git merge --abort
-              gh pr comment $pr_number --body "⚠️ Automated merge failed: Merge conflicts detected. Please resolve conflicts manually."
+              return 1
             fi
-          done <<< "$prs"
+          }
+
+          if [[ -n "$INPUT_PR" ]]; then
+            echo "Fetching PR #$INPUT_PR info..."
+            pr_info=$(gh pr view "$INPUT_PR" --json headRefName)
+            head_ref=$(echo "$pr_info" | jq -r .headRefName)
+            merge_into_branch "$head_ref" || gh pr comment "$INPUT_PR" --body "⚠️ Merge conflict: Please resolve conflicts with pre-release manually."
+
+          elif [[ -n "$INPUT_BRANCH" ]]; then
+            merge_into_branch "$INPUT_BRANCH"
+
+          else
+            echo "Fetching open PRs..."
+            prs=$(gh pr list --state open --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')
+            while IFS=$'\t' read -r pr_number head_ref; do
+              echo "\nProcessing PR #$pr_number ($head_ref)..."
+              if merge_into_branch "$head_ref"; then
+                echo "✅ Merged into #$pr_number"
+              else
+                echo "❌ Conflict in #$pr_number"
+                gh pr comment "$pr_number" --body "⚠️ Merge conflict: Please resolve conflicts with pre-release manually."
+              fi
+            done <<< "$prs"
+          fi
+          EOF
+
+          chmod +x merge-script.sh
+          ./merge-script.sh
