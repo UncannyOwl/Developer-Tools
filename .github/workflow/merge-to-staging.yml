@@ -1,0 +1,99 @@
+name: Merge PR to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target branch to merge into (default: staging)'
+        required: false
+        type: string
+        default: 'staging'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-to-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install GitHub CLI
+        uses: cli/cli-action@v2
+
+      - name: Get PR Information
+        id: pr-info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the current PR number from the ref
+          PR_NUMBER=$(echo $GITHUB_REF | sed 's/.*\/pull\///')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Error: No PR number found in ref: $GITHUB_REF"
+            exit 1
+          fi
+          
+          # Get PR details
+          PR_INFO=$(gh pr view $PR_NUMBER --json headRefName,baseRefName)
+          PR_BRANCH=$(echo $PR_INFO | jq -r .headRefName)
+          BASE_BRANCH=$(echo $PR_INFO | jq -r .baseRefName)
+          
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "PR_BRANCH=$PR_BRANCH" >> $GITHUB_OUTPUT
+          echo "BASE_BRANCH=$BASE_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Merge PR to Target Branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.PR_NUMBER }}
+          PR_BRANCH: ${{ steps.pr-info.outputs.PR_BRANCH }}
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || 'staging' }}
+        run: |
+          echo "Starting merge process for PR #$PR_NUMBER to $TARGET_BRANCH..."
+
+          # Fetch the target branch
+          echo "Fetching $TARGET_BRANCH branch..."
+          git fetch origin $TARGET_BRANCH
+          
+          # Fetch the PR branch
+          echo "Fetching PR branch..."
+          git fetch origin $PR_BRANCH
+
+          # Checkout target branch
+          git checkout $TARGET_BRANCH
+          
+          # Update target branch with latest changes
+          git pull origin $TARGET_BRANCH
+
+          # Merge PR branch into target branch
+          echo "Merging PR #$PR_NUMBER into $TARGET_BRANCH..."
+          if git merge $PR_BRANCH --no-ff -m "Merge PR #$PR_NUMBER into $TARGET_BRANCH"; then
+            # Push changes to target branch
+            if git push origin $TARGET_BRANCH; then
+              echo "✅ Successfully merged PR #$PR_NUMBER into $TARGET_BRANCH"
+              
+              # Add a comment to the PR
+              gh pr comment $PR_NUMBER --body "✅ Successfully merged to $TARGET_BRANCH branch"
+              
+              # Close the PR
+              gh pr close $PR_NUMBER --comment "PR has been merged to $TARGET_BRANCH"
+            else
+              echo "❌ Failed to push changes to $TARGET_BRANCH"
+              gh pr comment $PR_NUMBER --body "❌ Failed to push changes to $TARGET_BRANCH branch. Please check the workflow logs for details."
+              exit 1
+            fi
+          else
+            echo "❌ Merge conflict detected"
+            git merge --abort
+            gh pr comment $PR_NUMBER --body "❌ Merge conflict detected. Please resolve conflicts and try again."
+            exit 1
+          fi 
