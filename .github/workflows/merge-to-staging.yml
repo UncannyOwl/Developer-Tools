@@ -45,10 +45,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cache GitHub CLI
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/local/bin/gh
+            ~/.cache/gh
+          key: ${{ runner.os }}-gh-cli-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gh-cli-
+
       - name: Setup GitHub CLI
+        if: steps.cache-gh.outputs.cache-hit != 'true'
         run: |
-          sudo apt update
-          sudo apt install -y gh jq
+          type -p curl >/dev/null || sudo apt-get install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh jq -y
 
       - name: Run Merge Script
         env:
@@ -66,13 +81,22 @@ jobs:
             local source=$1
             local is_pr=$2
 
-            echo "Checking out target branch: $TARGET_BRANCH"
+            # First, get the source branch ready
+            echo "Setting up source branch: $source"
+            git fetch origin "$source"
+            git checkout -B "$source" "origin/$source"
+            
+            # Now get target branch ready
+            echo "Setting up target branch: $TARGET_BRANCH"
             git fetch origin "$TARGET_BRANCH"
-            git checkout "$TARGET_BRANCH"
+            git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+            
+            # Make sure we have latest changes
             git pull origin "$TARGET_BRANCH"
 
-            echo "Merging $source into $TARGET_BRANCH"
-            if git merge "$source" --no-ff -m "Merge $source into $TARGET_BRANCH"; then
+            # Now merge source into target
+            echo "Merging $source into $TARGET_BRANCH..."
+            if git merge --no-ff "origin/$source" -m "Merge $source into $TARGET_BRANCH"; then
               git push origin "$TARGET_BRANCH"
               echo "✅ Successfully merged $source into $TARGET_BRANCH"
               
@@ -83,7 +107,7 @@ jobs:
               return 0
             else
               echo "❌ Merge conflict detected"
-              git merge --abort
+              git merge --abort || true
               
               if [[ "$is_pr" == "true" ]]; then
                 gh pr comment "$INPUT_PR" --body "❌ Merge conflict detected. Please resolve conflicts and try again."
@@ -96,14 +120,9 @@ jobs:
             echo "Fetching PR #$INPUT_PR info..."
             pr_info=$(gh pr view "$INPUT_PR" --json headRefName)
             source_branch=$(echo "$pr_info" | jq -r .headRefName)
-            
-            echo "Fetching source branch: $source_branch"
-            git fetch origin "$source_branch"
             merge_to_target "$source_branch" "true"
 
           elif [[ -n "$INPUT_BRANCH" ]]; then
-            echo "Fetching source branch: $INPUT_BRANCH"
-            git fetch origin "$INPUT_BRANCH"
             merge_to_target "$INPUT_BRANCH" "false"
 
           else

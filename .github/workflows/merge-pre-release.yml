@@ -37,10 +37,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cache GitHub CLI
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/local/bin/gh
+            ~/.cache/gh
+          key: ${{ runner.os }}-gh-cli-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gh-cli-
+
       - name: Setup GitHub CLI
+        if: steps.cache-gh.outputs.cache-hit != 'true'
         run: |
-          sudo apt update
-          sudo apt install -y gh jq
+          type -p curl >/dev/null || sudo apt-get install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh jq -y
 
       - name: Run Merge Script
         env:
@@ -55,17 +70,30 @@ jobs:
 
           merge_into_branch() {
             local branch=$1
-            echo "Checking out branch: $branch"
+            local pr_number=$2
+
+            # Setup pre-release branch
+            echo "Setting up pre-release branch"
+            git fetch origin pre-release
+            git checkout -B pre-release origin/pre-release
+
+            # Setup target branch
+            echo "Setting up target branch: $branch"
             git fetch origin "$branch"
-            git checkout "$branch"
-            echo "Merging origin/pre-release into $branch"
-            if git merge origin/pre-release --no-commit --no-ff; then
-              git commit -m "Auto-merged pre-release into $branch"
+            git checkout -B "$branch" "origin/$branch"
+
+            # Merge pre-release into target
+            echo "Merging pre-release into $branch"
+            if git merge --no-ff origin/pre-release -m "Auto-merged pre-release into $branch"; then
               git push origin "$branch"
               echo "✅ Successfully merged pre-release into $branch"
+              return 0
             else
               echo "❌ Merge conflict detected in $branch"
-              git merge --abort
+              git merge --abort || true
+              if [ -n "$pr_number" ]; then
+                gh pr comment "$pr_number" --body "⚠️ Merge conflict: Please resolve conflicts with pre-release manually."
+              fi
               return 1
             fi
           }
@@ -74,7 +102,7 @@ jobs:
             echo "Fetching PR #$INPUT_PR info..."
             pr_info=$(gh pr view "$INPUT_PR" --json headRefName)
             head_ref=$(echo "$pr_info" | jq -r .headRefName)
-            merge_into_branch "$head_ref" || gh pr comment "$INPUT_PR" --body "⚠️ Merge conflict: Please resolve conflicts with pre-release manually."
+            merge_into_branch "$head_ref" "$INPUT_PR"
 
           elif [[ -n "$INPUT_BRANCH" ]]; then
             merge_into_branch "$INPUT_BRANCH"
@@ -83,12 +111,11 @@ jobs:
             echo "Fetching open PRs..."
             prs=$(gh pr list --state open --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')
             while IFS=$'\t' read -r pr_number head_ref; do
-              echo "\nProcessing PR #$pr_number ($head_ref)..."
-              if merge_into_branch "$head_ref"; then
+              echo -e "\nProcessing PR #$pr_number ($head_ref)..."
+              if merge_into_branch "$head_ref" "$pr_number"; then
                 echo "✅ Merged into #$pr_number"
               else
                 echo "❌ Conflict in #$pr_number"
-                gh pr comment "$pr_number" --body "⚠️ Merge conflict: Please resolve conflicts with pre-release manually."
               fi
             done <<< "$prs"
           fi
