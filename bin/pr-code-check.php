@@ -12,8 +12,17 @@ if (!in_array($commandType, ['phpcs', 'phpcbf'])) {
     exit(1);
 }
 
-// Get the base directory (where the script is being called from)
-$baseDir = getcwd();
+// Determine if we're on Windows
+$isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+
+// Get the script directory
+$scriptDir = dirname(__FILE__);
+
+// Get the base directory (project root)
+$baseDir = dirname(dirname($scriptDir));
+
+// Change to the project root directory
+chdir($baseDir);
 
 // Get the vendor directory path
 $vendorDir = $baseDir . DIRECTORY_SEPARATOR . 'vendor';
@@ -27,16 +36,36 @@ if (!file_exists($binPath . 'phpcs')) {
                DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR;
 }
 
-$phpcsBin = $binPath . 'phpcs';
-$phpcbfBin = $binPath . 'phpcbf';
+// On Windows, ensure we have .bat extension for the binaries
+$phpcsExt = $isWindows ? '.bat' : '';
+$phpcbfExt = $isWindows ? '.bat' : '';
+
+$phpcsBin = $binPath . 'phpcs' . $phpcsExt;
+$phpcbfBin = $binPath . 'phpcbf' . $phpcbfExt;
+
+// Verify tool paths exist
+if (!file_exists($phpcsBin)) {
+    echo "Error: PHPCS binary not found at {$phpcsBin}\n";
+    exit(1);
+}
+
+if (!file_exists($phpcbfBin)) {
+    echo "Error: PHPCBF binary not found at {$phpcbfBin}\n";
+    exit(1);
+}
 
 // Get changed PHP files
-$output = [];
-$returnVar = 0;
-exec('git diff --name-only origin/pre-release...', $output, $returnVar);
+try {
+    $output = [];
+    $returnVar = 0;
+    exec('git diff --name-only origin/pre-release...', $output, $returnVar);
 
-if ($returnVar !== 0) {
-    echo "Error: Failed to get changed files from git\n";
+    if ($returnVar !== 0) {
+        throw new Exception("Failed to execute git diff command. Error code: $returnVar");
+    }
+} catch (Exception $e) {
+    echo "Error: " . $e->getMessage() . "\n";
+    echo "Make sure git is installed and available.\n";
     exit(1);
 }
 
@@ -68,12 +97,31 @@ if (empty($phpFiles)) {
     exit(0);
 }
 
+echo "Found " . count($phpFiles) . " PHP files to check.\n";
+
 // Build the command
 $bin = $commandType === 'phpcs' ? $phpcsBin : $phpcbfBin;
 $args = $commandType === 'phpcs' ? '--standard=Uncanny-Automator --warning-severity=1' : '--standard=Uncanny-Automator';
 $files = implode(' ', array_map('escapeshellarg', $phpFiles));
-$command = sprintf('%s %s %s', $bin, $args, $files);
 
-// Execute the command
-passthru($command, $returnVar);
+// Command can be too long on Windows, so process in batches if needed
+if ($isWindows && strlen($files) > 8000) {
+    $batches = array_chunk($phpFiles, 50);
+    $returnVar = 0;
+    
+    foreach ($batches as $batchFiles) {
+        $batchFileArgs = implode(' ', array_map('escapeshellarg', $batchFiles));
+        $command = sprintf('%s %s %s', $bin, $args, $batchFileArgs);
+        passthru($command, $batchReturnVar);
+        
+        if ($batchReturnVar > $returnVar) {
+            $returnVar = $batchReturnVar;
+        }
+    }
+} else {
+    $command = sprintf('%s %s %s', $bin, $args, $files);
+    echo "Running: " . $commandType . " on changed files...\n";
+    passthru($command, $returnVar);
+}
+
 exit($returnVar); 

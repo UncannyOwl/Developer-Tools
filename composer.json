@@ -31,6 +31,8 @@
         }
     },
     "bin": [
+        "bin/pr-code-check",
+        "bin/pr-code-check.bat",
         "bin/pr-code-check.php"
     ],
     "scripts": {
@@ -40,15 +42,15 @@
         "phpcs": "./vendor/bin/phpcs -s --standard=Uncanny-Automator --warning-severity=1",
         "phpcsOnSave": "./vendor/bin/phpcs -s -v --standard=Uncanny-Automator --warning-severity=1 --report=full",
         "phpcbf": "./vendor/bin/phpcbf -s --standard=Uncanny-Automator",
-        "phpcs:pr": "php ./bin/pr-code-check.php phpcs",
-        "phpcbf:pr": "php ./bin/pr-code-check.php phpcbf",
+        "phpcs:pr": "@php bin/pr-code-check.php phpcs",
+        "phpcbf:pr": "@php bin/pr-code-check.php phpcbf",
         "post-install-cmd": [
-            "@php -r \"if (PHP_OS_FAMILY === 'Windows') { exit(0); }\"",
-            "chmod +x bin/pr-code-check.php"
+            "@php -r \"file_exists('bin/pr-code-check') && chmod(realpath('bin/pr-code-check'), 0755);\"",
+            "@php -r \"file_exists('bin/pr-code-check.php') && chmod(realpath('bin/pr-code-check.php'), 0755);\""
         ],
         "post-update-cmd": [
-            "@php -r \"if (PHP_OS_FAMILY === 'Windows') { exit(0); }\"",
-            "chmod +x bin/pr-code-check.php"
+            "@php -r \"file_exists('bin/pr-code-check') && chmod(realpath('bin/pr-code-check'), 0755);\"",
+            "@php -r \"file_exists('bin/pr-code-check.php') && chmod(realpath('bin/pr-code-check.php'), 0755);\""
         ]
     },
     "minimum-stability": "dev",

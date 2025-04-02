@@ -2,17 +2,6 @@
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
-PROJECT_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 
-# Change to the project root directory
-cd "$PROJECT_ROOT"
-
-# Check if PHP is available
-if ! command -v php >/dev/null 2>&1; then
-    echo "Error: PHP is not found in your system PATH."
-    echo "Please ensure PHP is installed and added to your system PATH."
-    exit 1
-fi
-
-# Execute the PHP script with the provided arguments
+# Execute the PHP script with all provided arguments
 php "$SCRIPT_DIR/pr-code-check.php" "$@" 
