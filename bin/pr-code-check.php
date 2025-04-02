@@ -24,16 +24,18 @@ echo "Operating System: " . PHP_OS . " (Windows: " . ($isWindows ? "Yes" : "No")
 $scriptDir = dirname(__FILE__);
 echo "Script directory: $scriptDir\n";
 
-// Get the base directory (project root)
-$baseDir = realpath(dirname(dirname($scriptDir)));
-echo "Base directory: $baseDir\n";
+// Get the correct project root (NOT the automator-dev-tools, but the plugin root)
+$baseDir = realpath(dirname(dirname($scriptDir))); // automator-dev-tools
+$projectRootDir = dirname(dirname($baseDir)); // Go up to plugin root
+echo "Base directory (dev tools): $baseDir\n";
+echo "Project root directory: $projectRootDir\n";
 
 // Change to the project root directory
-chdir($baseDir);
+chdir($projectRootDir);
 echo "Current working directory: " . getcwd() . "\n";
 
 // Get the vendor directory path
-$vendorDir = $baseDir . DIRECTORY_SEPARATOR . 'vendor';
+$vendorDir = $projectRootDir . DIRECTORY_SEPARATOR . 'vendor';
 echo "Vendor directory: $vendorDir\n";
 
 // Get the PHPCS binary path
@@ -115,25 +117,22 @@ $args = $commandType === 'phpcs' ? '--standard=Uncanny-Automator --warning-sever
 if (!file_exists($bin)) {
     echo "Warning: Binary not found at expected location. Attempting to find it elsewhere...\n";
     
-    // Try to find the binary in standard locations
-    if ($isWindows) {
-        // Look in vendor/bin directory
-        $altBinPath = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR;
-        $altBin = $altBinPath . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . $phpcsExt;
-        
-        if (file_exists($altBin)) {
-            echo "Found binary at alternate location: $altBin\n";
-            $bin = $altBin;
+    // Try to find the binary in vendor/bin directory
+    $altBinPath = $vendorDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR;
+    $altBin = $altBinPath . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . ($isWindows ? '.bat' : '');
+    
+    if (file_exists($altBin)) {
+        echo "Found binary at alternate location: $altBin\n";
+        $bin = $altBin;
+    } else if ($isWindows) {
+        // Try to locate it using 'where' command
+        $whereBin = trim(shell_exec('where ' . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . ' 2> nul'));
+        if (!empty($whereBin)) {
+            echo "Found binary using 'where' command: $whereBin\n";
+            $bin = $whereBin;
         } else {
-            // Try to locate it using 'where' command
-            $whereBin = trim(shell_exec('where ' . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . ' 2> nul'));
-            if (!empty($whereBin)) {
-                echo "Found binary using 'where' command: $whereBin\n";
-                $bin = $whereBin;
-            } else {
-                echo "Error: Cannot find " . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . " binary.\n";
-                exit(1);
-            }
+            echo "Error: Cannot find " . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . " binary.\n";
+            exit(1);
         }
     } else {
         // Unix systems
@@ -148,43 +147,27 @@ if (!file_exists($bin)) {
     }
 }
 
-// Command can be too long on Windows, so process in batches if needed
-if ($isWindows && count($phpFiles) > 50) {
-    $batches = array_chunk($phpFiles, 50);
-    $returnVar = 0;
-    
-    foreach ($batches as $index => $batchFiles) {
-        echo "Processing batch " . ($index + 1) . " of " . count($batches) . "...\n";
-        
-        // Create a temporary file with the list of files to process
-        $tmpFile = tempnam(sys_get_temp_dir(), 'phpcs_files_');
-        file_put_contents($tmpFile, implode(PHP_EOL, $batchFiles));
-        
-        // Use the file list instead of command line arguments
-        $command = sprintf('"%s" %s --file-list="%s"', $bin, $args, $tmpFile);
-        echo "Executing: $command\n";
-        passthru($command, $batchReturnVar);
-        
-        // Clean up
-        unlink($tmpFile);
-        
-        if ($batchReturnVar > $returnVar) {
-            $returnVar = $batchReturnVar;
-        }
-    }
-} else {
-    // For non-Windows or smaller file lists, use a temporary file approach for safety
-    $tmpFile = tempnam(sys_get_temp_dir(), 'phpcs_files_');
-    file_put_contents($tmpFile, implode(PHP_EOL, $phpFiles));
-    
-    // Use the file list instead of command line arguments
-    $command = sprintf('"%s" %s --file-list="%s"', $bin, $args, $tmpFile);
-    echo "Executing: $command\n";
-    passthru($command, $returnVar);
-    
-    // Clean up
-    unlink($tmpFile);
+// Create a temporary file with the list of files to process
+$tmpFile = tempnam(sys_get_temp_dir(), 'phpcs_files_');
+
+// Create a list of absolute paths to the files
+$absolutePhpFiles = [];
+foreach ($phpFiles as $file) {
+    $absolutePath = $projectRootDir . DIRECTORY_SEPARATOR . $file;
+    $absolutePhpFiles[] = $absolutePath;
 }
+
+// Write absolute paths to the temp file
+file_put_contents($tmpFile, implode(PHP_EOL, $absolutePhpFiles));
+echo "Wrote " . count($absolutePhpFiles) . " files to temp file: $tmpFile\n";
+
+// Use the file list with absolute paths
+$command = sprintf('"%s" %s --file-list="%s"', $bin, $args, $tmpFile);
+echo "Executing: $command\n";
+passthru($command, $returnVar);
+
+// Clean up
+unlink($tmpFile);
 
 echo "Done. Exit code: $returnVar\n";
 exit($returnVar); 
