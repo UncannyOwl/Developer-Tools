@@ -27,7 +27,7 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-REM Execute PHP explicitly with the full path to the script
+REM Execute PHP explicitly with the full path to the script - wrapped in quotes for space handling
 echo Running PR code check with %~1...
 php -f "!SCRIPT_DIR!pr-code-check.php" %1
 

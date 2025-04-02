@@ -15,8 +15,11 @@ if (!in_array($commandType, ['phpcs', 'phpcbf'])) {
     exit(1);
 }
 
-// Build the command to execute the main script
-$command = sprintf('php "%s\\pr-code-check.php" %s', $scriptDir, $commandType);
+// Build the command to execute the main script - double quote path to handle spaces
+$command = sprintf('php -f "%s\\pr-code-check.php" %s', $scriptDir, $commandType);
+
+// Diagnostic output
+echo "Executing command: {$command}\n";
 
 // Execute the command and pass the exit code
 $returnCode = 0;

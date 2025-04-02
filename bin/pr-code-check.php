@@ -111,6 +111,43 @@ echo "Found " . count($phpFiles) . " PHP files to check.\n";
 $bin = $commandType === 'phpcs' ? $phpcsBin : $phpcbfBin;
 $args = $commandType === 'phpcs' ? '--standard=Uncanny-Automator --warning-severity=1' : '--standard=Uncanny-Automator';
 
+// Check if the binary exists - if not, try to find it elsewhere
+if (!file_exists($bin)) {
+    echo "Warning: Binary not found at expected location. Attempting to find it elsewhere...\n";
+    
+    // Try to find the binary in standard locations
+    if ($isWindows) {
+        // Look in vendor/bin directory
+        $altBinPath = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR;
+        $altBin = $altBinPath . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . $phpcsExt;
+        
+        if (file_exists($altBin)) {
+            echo "Found binary at alternate location: $altBin\n";
+            $bin = $altBin;
+        } else {
+            // Try to locate it using 'where' command
+            $whereBin = trim(shell_exec('where ' . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . ' 2> nul'));
+            if (!empty($whereBin)) {
+                echo "Found binary using 'where' command: $whereBin\n";
+                $bin = $whereBin;
+            } else {
+                echo "Error: Cannot find " . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . " binary.\n";
+                exit(1);
+            }
+        }
+    } else {
+        // Unix systems
+        $whichBin = trim(shell_exec('which ' . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . ' 2>/dev/null'));
+        if (!empty($whichBin)) {
+            echo "Found binary using 'which' command: $whichBin\n";
+            $bin = $whichBin;
+        } else {
+            echo "Error: Cannot find " . ($commandType === 'phpcs' ? 'phpcs' : 'phpcbf') . " binary.\n";
+            exit(1);
+        }
+    }
+}
+
 // Command can be too long on Windows, so process in batches if needed
 if ($isWindows && count($phpFiles) > 50) {
     $batches = array_chunk($phpFiles, 50);
@@ -118,20 +155,35 @@ if ($isWindows && count($phpFiles) > 50) {
     
     foreach ($batches as $index => $batchFiles) {
         echo "Processing batch " . ($index + 1) . " of " . count($batches) . "...\n";
-        $batchFileArgs = implode(' ', array_map('escapeshellarg', $batchFiles));
-        $batchCommand = sprintf('%s %s %s', $bin, $args, $batchFileArgs);
-        echo "Executing: $batchCommand\n";
-        passthru($batchCommand, $batchReturnVar);
+        
+        // Create a temporary file with the list of files to process
+        $tmpFile = tempnam(sys_get_temp_dir(), 'phpcs_files_');
+        file_put_contents($tmpFile, implode(PHP_EOL, $batchFiles));
+        
+        // Use the file list instead of command line arguments
+        $command = sprintf('"%s" %s --file-list="%s"', $bin, $args, $tmpFile);
+        echo "Executing: $command\n";
+        passthru($command, $batchReturnVar);
+        
+        // Clean up
+        unlink($tmpFile);
         
         if ($batchReturnVar > $returnVar) {
             $returnVar = $batchReturnVar;
         }
     }
 } else {
-    $files = implode(' ', array_map('escapeshellarg', $phpFiles));
-    $command = sprintf('%s %s %s', $bin, $args, $files);
+    // For non-Windows or smaller file lists, use a temporary file approach for safety
+    $tmpFile = tempnam(sys_get_temp_dir(), 'phpcs_files_');
+    file_put_contents($tmpFile, implode(PHP_EOL, $phpFiles));
+    
+    // Use the file list instead of command line arguments
+    $command = sprintf('"%s" %s --file-list="%s"', $bin, $args, $tmpFile);
     echo "Executing: $command\n";
     passthru($command, $returnVar);
+    
+    // Clean up
+    unlink($tmpFile);
 }
 
 echo "Done. Exit code: $returnVar\n";
