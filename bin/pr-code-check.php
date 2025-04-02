@@ -5,14 +5,8 @@
  * Cross-platform PR code checking script
  */
 
-// Windows-specific check
-if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-    // Ensure PHP is in the PATH
-    if (!defined('PHP_BINARY')) {
-        echo "Error: PHP binary not found. Please ensure PHP is installed and in your system PATH.\n";
-        exit(1);
-    }
-}
+// Define constants for platform detection
+define('IS_WINDOWS', strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
 // Get the command type (phpcs or phpcbf)
 $commandType = $argv[1] ?? '';
@@ -42,15 +36,26 @@ if (!file_exists($binPath . 'phpcs')) {
 $phpcsBin = $binPath . 'phpcs';
 $phpcbfBin = $binPath . 'phpcbf';
 
+// Handle Windows-specific executable detection
+if (IS_WINDOWS) {
+    // In Windows, check for .bat or .cmd extensions
+    if (!file_exists($phpcsBin) && file_exists($phpcsBin . '.bat')) {
+        $phpcsBin .= '.bat';
+    }
+    if (!file_exists($phpcbfBin) && file_exists($phpcbfBin . '.bat')) {
+        $phpcbfBin .= '.bat';
+    }
+}
+
 // Get changed PHP files
 $output = [];
 $returnVar = 0;
 
-// Use PHP's built-in exec function with proper shell escaping
+// Windows-specific command execution
 $gitCommand = 'git diff --name-only origin/pre-release...';
-if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-    // Windows-specific command execution
-    exec('cmd /c ' . escapeshellarg($gitCommand), $output, $returnVar);
+if (IS_WINDOWS) {
+    // Use different shell escaping on Windows
+    exec('cmd /c ' . $gitCommand, $output, $returnVar);
 } else {
     exec($gitCommand, $output, $returnVar);
 }
@@ -94,13 +99,30 @@ if (empty($phpFiles)) {
 // Build the command
 $bin = $commandType === 'phpcs' ? $phpcsBin : $phpcbfBin;
 $args = $commandType === 'phpcs' ? '--standard=Uncanny-Automator --warning-severity=1' : '--standard=Uncanny-Automator';
-$files = implode(' ', array_map('escapeshellarg', $phpFiles));
-$command = sprintf('%s %s %s', $bin, $args, $files);
 
-// Execute the command with proper shell handling
-if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-    // Windows-specific command execution
-    passthru('cmd /c ' . escapeshellarg($command), $returnVar);
+// Convert file paths to the correct format and properly escape them
+$files = array_map(function($file) {
+    // Normalize slashes for the current platform
+    $file = str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $file);
+    return escapeshellarg($file);
+}, $phpFiles);
+
+$filesStr = implode(' ', $files);
+
+// Build the complete command with proper OS-specific handling
+if (IS_WINDOWS) {
+    // On Windows, we need to execute this through cmd
+    $command = sprintf('cmd /c %s %s %s', escapeshellarg($bin), $args, $filesStr);
+} else {
+    $command = sprintf('%s %s %s', $bin, $args, $filesStr);
+}
+
+// Display command (for debugging)
+echo "Executing: " . ($commandType === 'phpcs' ? 'PHP Code Sniffer' : 'PHP Code Beautifier and Fixer') . "\n";
+
+// Execute the command
+if (IS_WINDOWS) {
+    passthru($command, $returnVar);
 } else {
     passthru($command, $returnVar);
 }
