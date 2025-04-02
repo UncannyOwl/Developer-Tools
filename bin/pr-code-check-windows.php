@@ -4,24 +4,30 @@
  * This is used to avoid issues with Windows trying to open PHP files instead of executing them
  */
 
-// Get the script directory
-$scriptDir = dirname(__FILE__);
-
-// Get the command type from arguments
-$commandType = isset($argv[1]) ? $argv[1] : '';
-
-if (!in_array($commandType, ['phpcs', 'phpcbf'])) {
+// If no arguments provided, show usage
+if ($argc < 2) {
     echo "Usage: php pr-code-check-windows.php [phpcs|phpcbf]\n";
     exit(1);
 }
 
-// Build the command to execute the main script - double quote path to handle spaces
+// Get the command type from arguments
+$commandType = $argv[1];
+
+// Validate command type
+if (!in_array($commandType, ['phpcs', 'phpcbf'])) {
+    echo "Error: First argument must be either 'phpcs' or 'phpcbf'\n";
+    echo "Usage: php pr-code-check-windows.php [phpcs|phpcbf]\n";
+    exit(1);
+}
+
+// Get the script directory
+$scriptDir = dirname(__FILE__);
+
+// Build the command to execute the main script
 $command = sprintf('php -f "%s\\pr-code-check.php" %s', $scriptDir, $commandType);
 
 // Diagnostic output
 echo "Executing command: {$command}\n";
 
-// Execute the command and pass the exit code
-$returnCode = 0;
-passthru($command, $returnCode);
-exit($returnCode); 
+// Just include the script directly to avoid shell escaping issues
+require_once($scriptDir . DIRECTORY_SEPARATOR . 'pr-code-check.php'); 
