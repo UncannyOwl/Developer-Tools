@@ -22,12 +22,20 @@
         "vlucas/phpdotenv": "^5.3",
         "uocs/uncanny-owl-coding-standards": "dev-main"
     },
+    "require-dev": {
+        "humbug/php-scoper": "^0.18.3"
+    },
     "config": {
         "sort-packages": false,
         "optimize-autoloader": true,
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true,
             "phpstan/extension-installer": true
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "UncannyOwl\\DevTools\\": "src/"
         }
     },
     "bin": [
@@ -51,8 +59,34 @@
         "post-update-cmd": [
             "@php -r \"file_exists('bin/pr-code-check') && chmod(realpath('bin/pr-code-check'), 0755);\"",
             "@php -r \"file_exists('bin/pr-code-check.php') && chmod(realpath('bin/pr-code-check.php'), 0755);\""
+        ],
+        "prefix-dependencies": "php-scoper add-prefix --output-dir=./build --force",
+        "build": [
+            "@prefix-dependencies",
+            "@composer dump-autoload -d build"
+        ],
+        "pre-package-release": [
+            "@build"
+        ],
+        "release": [
+            "@composer validate --strict",
+            "@build",
+            "php -r \"echo 'Package is ready for release. The prefixed version is in the build directory.\\n';\""
+        ],
+        "prepare-release": [
+            "@composer validate --strict",
+            "@build",
+            "php -r \"echo 'Run: ./prepare-release.sh VERSION to create a release branch with the prefixed build included.\\n';\""
         ]
     },
     "minimum-stability": "dev",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "extra": {
+        "php-scoper": {
+            "prefix": "UncannyOwl\\DevTools\\Vendor",
+            "exclude-namespaces": [
+                "UncannyOwl\\DevTools\\*"
+            ]
+        }
+    }
 } 
