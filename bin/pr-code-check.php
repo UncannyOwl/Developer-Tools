@@ -154,7 +154,18 @@ $tmpFile = tempnam(sys_get_temp_dir(), 'phpcs_files_');
 $absolutePhpFiles = [];
 foreach ($phpFiles as $file) {
     $absolutePath = $projectRootDir . DIRECTORY_SEPARATOR . $file;
-    $absolutePhpFiles[] = $absolutePath;
+    // Only include files that actually exist (exclude deleted files)
+    if (file_exists($absolutePath)) {
+        $absolutePhpFiles[] = $absolutePath;
+    } else {
+        echo "Skipping deleted file: $absolutePath\n";
+    }
+}
+
+// Check if we still have files to process after filtering out deleted ones
+if (empty($absolutePhpFiles)) {
+    echo "No existing PHP files to check after filtering out deleted files.\n";
+    exit(0);
 }
 
 // Write absolute paths to the temp file
