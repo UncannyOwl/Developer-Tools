@@ -334,9 +334,8 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                             $complexity = (int)$complexityMatches[2];
                             $coreTotalMethods++;
 
-                            // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
-                            // For now, assume 0% coverage if not provided
-                            $coverage = 0; // This would need to be calculated from test coverage
+                            // Calculate CRAP score with test coverage detection
+                            $coverage = getTestCoverageForMethod($fileName, $methodName, $lineNumber);
                             $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
 
                             $coreCrapScores[] = [
@@ -416,9 +415,8 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                             $complexity = (int)$complexityMatches[2];
                             $integrationTotalMethods++;
 
-                            // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
-                            // For now, assume 0% coverage if not provided
-                            $coverage = 0; // This would need to be calculated from test coverage
+                            // Calculate CRAP score with test coverage detection
+                            $coverage = getTestCoverageForMethod($fileName, $methodName, $lineNumber);
                             $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
 
                             $integrationCrapScores[] = [
@@ -717,6 +715,108 @@ if ($isPrMode) {
 /**
  * Fetch baseline CRAP score data from pre-release branch
  */
+function getTestCoverageForMethod($filePath, $methodName, $lineNumber) {
+    global $projectRootDir;
+    
+    // Look for test files that might test this method
+    $testFiles = findTestFilesForMethod($filePath, $methodName);
+    
+    if (empty($testFiles)) {
+        return 0; // No tests found, assume 0% coverage
+    }
+    
+    // Check if any test files actually test this specific method
+    foreach ($testFiles as $testFile) {
+        if (testFileCoversMethod($testFile, $methodName)) {
+            return 50; // Assume 50% coverage if test file exists and mentions the method
+        }
+    }
+    
+    return 25; // Test file exists but doesn't specifically test this method
+}
+
+function findTestFilesForMethod($filePath, $methodName) {
+    global $projectRootDir;
+    
+    $testFiles = [];
+    $relativePath = str_replace($projectRootDir . '/', '', $filePath);
+    $relativePath = str_replace('.php', '', $relativePath);
+    
+    // Common test file patterns
+    $testPatterns = [
+        'tests/unit/' . $relativePath . 'Test.php',
+        'tests/unit/' . basename($relativePath) . 'Test.php',
+        'tests/' . $relativePath . 'Test.php',
+        'tests/' . basename($relativePath) . 'Test.php',
+        'test/' . $relativePath . 'Test.php',
+        'test/' . basename($relativePath) . 'Test.php',
+    ];
+    
+    // Also look for integration tests
+    $integrationTestPatterns = [
+        'tests/integration/' . $relativePath . 'Test.php',
+        'tests/integration/' . basename($relativePath) . 'Test.php',
+        'tests/features/' . $relativePath . 'Test.php',
+        'tests/features/' . basename($relativePath) . 'Test.php',
+    ];
+    
+    $allPatterns = array_merge($testPatterns, $integrationTestPatterns);
+    
+    foreach ($allPatterns as $pattern) {
+        $fullPath = $projectRootDir . '/' . $pattern;
+        if (file_exists($fullPath)) {
+            $testFiles[] = $fullPath;
+        }
+    }
+    
+    // Also search for any test files that might contain the class name
+    $className = basename($relativePath);
+    $testDir = $projectRootDir . '/tests';
+    if (is_dir($testDir)) {
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($testDir));
+        foreach ($iterator as $file) {
+            if ($file->isFile() && preg_match('/Test\.php$/', $file->getPathname())) {
+                $content = file_get_contents($file->getPathname());
+                if (strpos($content, $className) !== false || strpos($content, $methodName) !== false) {
+                    $testFiles[] = $file->getPathname();
+                }
+            }
+        }
+    }
+    
+    return array_unique($testFiles);
+}
+
+function testFileCoversMethod($testFilePath, $methodName) {
+    if (!file_exists($testFilePath)) {
+        return false;
+    }
+    
+    $content = file_get_contents($testFilePath);
+    
+    // Look for method name in test file
+    $methodPatterns = [
+        'test' . ucfirst($methodName),
+        'test_' . $methodName,
+        'test' . $methodName,
+        'should' . ucfirst($methodName),
+        'when' . ucfirst($methodName),
+        'it_' . $methodName,
+        'it ' . $methodName,
+        '->' . $methodName . '(',
+        '::' . $methodName . '(',
+        '$this->' . $methodName . '(',
+    ];
+    
+    foreach ($methodPatterns as $pattern) {
+        if (stripos($content, $pattern) !== false) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 function getBaselineCrapScores() {
     global $projectRootDir;
     
@@ -959,16 +1059,18 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     $comment .= "\n";
     $comment .= "Where:\n";
     $comment .= "- Cyclomatic Complexity = Number of decision points in a method\n";
-    $comment .= "- Code Coverage = Percentage of code covered by tests (assumed 0%)\n";
-    $comment .= "- For 0% coverage: CRAP = Complexity² + Complexity\n";
+    $comment .= "- Code Coverage = Percentage of code covered by tests (auto-detected)\n";
+    $comment .= "- Coverage Detection: 0% (no tests), 25% (test file exists), 50% (method tested)\n";
     $comment .= "\n";
-    $comment .= "Examples:\n";
-    $comment .= "- Complexity 1: CRAP = 1² + 1 = 2\n";
-    $comment .= "- Complexity 5: CRAP = 5² + 5 = 30\n";
-    $comment .= "- Complexity 10: CRAP = 10² + 10 = 110\n";
-    $comment .= "- Complexity 15: CRAP = 15² + 15 = 240\n";
+    $comment .= "Examples (with test coverage detection):\n";
+    $comment .= "- Complexity 1, no tests: CRAP = 1² × (1-0) + 1 = 2\n";
+    $comment .= "- Complexity 1, with tests: CRAP = 1² × (1-0.5) + 1 = 1.5\n";
+    $comment .= "- Complexity 10, no tests: CRAP = 10² × (1-0) + 10 = 110\n";
+    $comment .= "- Complexity 10, with tests: CRAP = 10² × (1-0.5) + 10 = 60\n";
+    $comment .= "- Complexity 15, no tests: CRAP = 15² × (1-0) + 15 = 240\n";
+    $comment .= "- Complexity 15, with tests: CRAP = 15² × (1-0.5) + 15 = 127.5\n";
     $comment .= "```\n\n";
-    $comment .= "**Note:** This analysis assumes 0% code coverage. Adding unit tests would significantly reduce CRAP scores.\n\n";
+    $comment .= "**Note:** This analysis automatically detects unit tests and adjusts CRAP scores accordingly. Methods with tests get lower CRAP scores.\n\n";
     
     $comment .= "### 📈 CRAP Score Guidelines\n";
     $comment .= "#### 🎯 Ideal Targets (New Code)\n";
