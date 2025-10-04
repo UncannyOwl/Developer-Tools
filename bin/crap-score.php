@@ -76,24 +76,13 @@ $filesToAnalyze = [];
 if ($isPrMode) {
     // Get changed PHP files from git diff
     try {
-        // Try different git diff approaches for different environments
-        $commands = [
-            'git diff --name-only HEAD~1...HEAD',  // GitHub Actions
-            'git diff --name-only origin/pre-release...',  // Local development
-            'git diff --name-only HEAD~1...',  // Fallback
-        ];
+        // Use the same approach as phpcs:pr - compare against origin/pre-release
+        $command = 'git diff --name-only origin/pre-release...';
+        echo "Using git command: $command\n";
         
         $output = [];
         $returnVar = 0;
-        
-        foreach ($commands as $command) {
-            exec($command, $output, $returnVar);
-            if ($returnVar === 0 && !empty($output)) {
-                echo "Using git command: $command\n";
-                break;
-            }
-            $output = []; // Reset for next attempt
-        }
+        exec($command . ' 2>&1', $output, $returnVar);
 
         if ($returnVar !== 0 || empty($output)) {
             echo "Warning: Could not get git diff, falling back to full analysis\n";
