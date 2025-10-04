@@ -269,7 +269,7 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 'message' => $message
                             ];
 
-                            if ($crapScore > 30) { // High CRAP score threshold
+                            if ($crapScore > 100) { // High CRAP score threshold for legacy project
                                 $coreHighCrapMethods++;
                                 $coreComplexityIssues[] = [
                                     'file' => $fileName,
@@ -322,7 +322,7 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 'message' => $message
                             ];
 
-                            if ($crapScore > 30) { // High CRAP score threshold
+                            if ($crapScore > 100) { // High CRAP score threshold for legacy project
                                 $integrationHighCrapMethods++;
                                 $integrationComplexityIssues[] = [
                                     'file' => $fileName,
@@ -366,21 +366,21 @@ echo "Core methods analyzed: $coreTotalMethods\n";
 echo "Core total CRAP score: " . number_format($coreTotalCrapScore, 2) . "\n";
 echo "Core average CRAP score: " . number_format($coreAverageCrapScore, 2) . "\n";
 echo "Core maximum CRAP score: " . number_format($coreMaxCrapScore, 2) . "\n";
-echo "Core methods with high CRAP score (>30): $coreHighCrapMethods\n";
+echo "Core methods with high CRAP score (>100): $coreHighCrapMethods\n";
 
 echo "\n--- INTEGRATIONS ---\n";
 echo "Integration methods analyzed: $integrationTotalMethods\n";
 echo "Integration total CRAP score: " . number_format($integrationTotalCrapScore, 2) . "\n";
 echo "Integration average CRAP score: " . number_format($integrationAverageCrapScore, 2) . "\n";
 echo "Integration maximum CRAP score: " . number_format($integrationMaxCrapScore, 2) . "\n";
-echo "Integration methods with high CRAP score (>30): $integrationHighCrapMethods\n";
+echo "Integration methods with high CRAP score (>100): $integrationHighCrapMethods\n";
 
 echo "\n--- OVERALL ---\n";
 echo "Total methods analyzed: $totalMethods\n";
 echo "TOTAL CRAP SCORE: " . number_format($overallTotalCrapScore, 2) . "\n";
 echo "Overall average CRAP score: " . number_format($averageCrapScore, 2) . "\n";
 echo "Overall maximum CRAP score: " . number_format($maxCrapScore, 2) . "\n";
-echo "Total methods with high CRAP score (>30): $totalHighCrapMethods\n";
+echo "Total methods with high CRAP score (>100): $totalHighCrapMethods\n";
 
 // Show individual methods only in verbose mode
 if ($isVerboseMode) {
@@ -405,8 +405,8 @@ if ($isVerboseMode) {
     // Show summary of high CRAP methods
     if ($coreHighCrapMethods > 0 || $integrationHighCrapMethods > 0) {
         echo "\n=== High CRAP Score Methods Summary ===\n";
-        echo "Core methods with high CRAP score (>30): $coreHighCrapMethods\n";
-        echo "Integration methods with high CRAP score (>30): $integrationHighCrapMethods\n";
+        echo "Core methods with high CRAP score (>100): $coreHighCrapMethods\n";
+        echo "Integration methods with high CRAP score (>100): $integrationHighCrapMethods\n";
         echo "Use --verbose flag to see individual method details\n";
     }
 }
@@ -452,28 +452,35 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     $comment .= "- **Total CRAP score:** " . number_format($coreTotalCrapScore, 2) . "\n";
     $comment .= "- **Average CRAP score:** " . number_format($coreAverageCrapScore, 2) . "\n";
     $comment .= "- **Maximum CRAP score:** " . number_format($coreMaxCrapScore, 2) . "\n";
-    $comment .= "- **High CRAP methods (>30):** $coreHighCrapMethods\n\n";
+    $comment .= "- **High CRAP methods (>100):** $coreHighCrapMethods\n\n";
     
     $comment .= "#### Integrations\n";
     $comment .= "- **Methods analyzed:** $integrationTotalMethods\n";
     $comment .= "- **Total CRAP score:** " . number_format($integrationTotalCrapScore, 2) . "\n";
     $comment .= "- **Average CRAP score:** " . number_format($integrationAverageCrapScore, 2) . "\n";
     $comment .= "- **Maximum CRAP score:** " . number_format($integrationMaxCrapScore, 2) . "\n";
-    $comment .= "- **High CRAP methods (>30):** $integrationHighCrapMethods\n\n";
+    $comment .= "- **High CRAP methods (>100):** $integrationHighCrapMethods\n\n";
     
     $comment .= "#### Overall\n";
     $comment .= "- **Total methods analyzed:** $totalMethods\n";
     $comment .= "- **TOTAL CRAP SCORE:** " . number_format($overallTotalCrapScore, 2) . "\n";
     $comment .= "- **Overall average CRAP score:** " . number_format($averageCrapScore, 2) . "\n";
     $comment .= "- **Overall maximum CRAP score:** " . number_format($maxCrapScore, 2) . "\n";
-    $comment .= "- **Total high CRAP methods (>30):** $totalHighCrapMethods\n\n";
+    $comment .= "- **Total high CRAP methods (>100):** $totalHighCrapMethods\n\n";
     
     // CRAP Score Interpretation
-    $comment .= "### 📈 CRAP Score Interpretation\n";
-    $comment .= "- **0-5:** Low risk, well-tested\n";
-    $comment .= "- **6-15:** Moderate risk\n";
-    $comment .= "- **16-30:** High risk, needs refactoring\n";
-    $comment .= "- **30+:** Very high risk, urgent refactoring needed\n\n";
+    $comment .= "### 📈 CRAP Score Guidelines\n";
+    $comment .= "#### 🎯 Ideal Targets (New Code)\n";
+    $comment .= "- **0-5:** Excellent - Low risk, well-tested\n";
+    $comment .= "- **6-15:** Good - Moderate risk, acceptable\n";
+    $comment .= "- **16-30:** Needs attention - Consider refactoring\n";
+    $comment .= "- **30+:** High risk - Should be refactored\n\n";
+    
+    $comment .= "#### 📊 Acceptable Baselines (Legacy Code)\n";
+    $comment .= "- **0-30:** ✅ Acceptable for legacy code\n";
+    $comment .= "- **31-100:** ⚠️ Monitor - Consider refactoring when touching\n";
+    $comment .= "- **101-500:** 🔶 High priority - Refactor when possible\n";
+    $comment .= "- **500+:** 🚨 Critical - Refactor urgently when touched\n\n";
     
     if (!empty($coreComplexityIssues)) {
         $comment .= "### ⚠️ High CRAP Score Methods - Core\n";
@@ -514,15 +521,19 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     if ($coreHighCrapMethods > 0) {
         $comment .= "#### Core Issues\n";
         $comment .= "- **Priority:** High - Core code should have low CRAP scores\n";
-        $comment .= "- Consider refactoring core methods with high CRAP scores\n";
+        $comment .= "- **New code:** Aim for CRAP scores < 30\n";
+        $comment .= "- **Legacy code:** Refactor when touching methods with CRAP > 100\n";
+        $comment .= "- **Critical methods (CRAP > 500):** Refactor urgently when modified\n";
         $comment .= "- Focus on reducing cyclomatic complexity in core functionality\n";
         $comment .= "- Add unit tests to improve coverage for core methods\n\n";
     }
     
     if ($integrationHighCrapMethods > 0) {
         $comment .= "#### Integration Issues\n";
-        $comment .= "- **Priority:** Medium - Integration code often has higher complexity\n";
-        $comment .= "- Consider refactoring integration methods if CRAP scores are extremely high (>100)\n";
+        $comment .= "- **Priority:** Medium - Integration code naturally has higher complexity\n";
+        $comment .= "- **New integrations:** Aim for CRAP scores < 50\n";
+        $comment .= "- **Legacy integrations:** Refactor when touching methods with CRAP > 200\n";
+        $comment .= "- **Critical integrations (CRAP > 1000):** Refactor urgently when modified\n";
         $comment .= "- Focus on reducing cyclomatic complexity where possible\n";
         $comment .= "- Add integration tests to improve coverage\n\n";
     }
