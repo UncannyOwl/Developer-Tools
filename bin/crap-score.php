@@ -846,6 +846,23 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     $comment .= "- **Total high CRAP methods (>100):** $totalHighCrapMethods\n\n";
     
     // CRAP Score Interpretation
+    $comment .= "### 🧮 CRAP Score Formula\n";
+    $comment .= "```\n";
+    $comment .= "CRAP Score = (Cyclomatic Complexity)² × (1 - Code Coverage) + Cyclomatic Complexity\n";
+    $comment .= "\n";
+    $comment .= "Where:\n";
+    $comment .= "- Cyclomatic Complexity = Number of decision points in a method\n";
+    $comment .= "- Code Coverage = Percentage of code covered by tests (assumed 0%)\n";
+    $comment .= "- For 0% coverage: CRAP = Complexity² + Complexity\n";
+    $comment .= "\n";
+    $comment .= "Examples:\n";
+    $comment .= "- Complexity 1: CRAP = 1² + 1 = 2\n";
+    $comment .= "- Complexity 5: CRAP = 5² + 5 = 30\n";
+    $comment .= "- Complexity 10: CRAP = 10² + 10 = 110\n";
+    $comment .= "- Complexity 15: CRAP = 15² + 15 = 240\n";
+    $comment .= "```\n\n";
+    $comment .= "**Note:** This analysis assumes 0% code coverage. Adding unit tests would significantly reduce CRAP scores.\n\n";
+    
     $comment .= "### 📈 CRAP Score Guidelines\n";
     $comment .= "#### 🎯 Ideal Targets (New Code)\n";
     $comment .= "- **0-5:** Excellent - Low risk, well-tested\n";
@@ -861,26 +878,73 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     
     if (!empty($coreComplexityIssues)) {
         $comment .= "### ⚠️ High CRAP Score Methods - Core\n";
-        $comment .= "| File | Line | CRAP Score | Issue |\n";
-        $comment .= "|------|------|------------|-------|\n";
+        $comment .= "| File | Line | Method | CRAP Score | Complexity |\n";
+        $comment .= "|------|------|--------|------------|------------|\n";
         
+        $count = 0;
         foreach ($coreComplexityIssues as $issue) {
+            if ($count >= 10) { // Limit to first 10 for readability
+                $remaining = count($coreComplexityIssues) - 10;
+                $comment .= "| ... | ... | ... | ... | *$remaining more methods* |\n";
+                break;
+            }
             $file = basename($issue['file']);
-            $comment .= "| `$file` | {$issue['line']} | " . number_format($issue['crap_score'], 2) . " | {$issue['message']} |\n";
+            $methodName = isset($issue['method']) ? $issue['method'] : 'Unknown';
+            $complexity = isset($issue['complexity']) ? $issue['complexity'] : 'N/A';
+            $comment .= "| `$file` | {$issue['line']} | `$methodName()` | **" . number_format($issue['crap_score'], 0) . "** | $complexity |\n";
+            $count++;
         }
         $comment .= "\n";
     }
     
     if (!empty($integrationComplexityIssues)) {
         $comment .= "### ⚠️ High CRAP Score Methods - Integrations\n";
-        $comment .= "| File | Line | CRAP Score | Issue |\n";
-        $comment .= "|------|------|------------|-------|\n";
+        $comment .= "| File | Line | Method | CRAP Score | Complexity |\n";
+        $comment .= "|------|------|--------|------------|------------|\n";
         
+        $count = 0;
         foreach ($integrationComplexityIssues as $issue) {
+            if ($count >= 10) { // Limit to first 10 for readability
+                $remaining = count($integrationComplexityIssues) - 10;
+                $comment .= "| ... | ... | ... | ... | *$remaining more methods* |\n";
+                break;
+            }
             $file = basename($issue['file']);
-            $comment .= "| `$file` | {$issue['line']} | " . number_format($issue['crap_score'], 2) . " | {$issue['message']} |\n";
+            $methodName = isset($issue['method']) ? $issue['method'] : 'Unknown';
+            $complexity = isset($issue['complexity']) ? $issue['complexity'] : 'N/A';
+            $comment .= "| `$file` | {$issue['line']} | `$methodName()` | **" . number_format($issue['crap_score'], 0) . "** | $complexity |\n";
+            $count++;
         }
         $comment .= "\n";
+    }
+    
+    // Add collapsible details section for full method details
+    if (!empty($coreComplexityIssues) || !empty($integrationComplexityIssues)) {
+        $comment .= "<details>\n<summary>📋 View All Method Details</summary>\n\n";
+        
+        if (!empty($coreComplexityIssues)) {
+            $comment .= "**Core Methods:**\n\n";
+            $comment .= "```\n";
+            foreach ($coreComplexityIssues as $issue) {
+                $methodName = isset($issue['method']) ? $issue['method'] : 'Unknown';
+                $comment .= basename($issue['file']) . ":" . $issue['line'] . " - " . $methodName . "() - CRAP: " . number_format($issue['crap_score'], 0) . "\n";
+                $comment .= "  " . $issue['message'] . "\n\n";
+            }
+            $comment .= "```\n\n";
+        }
+        
+        if (!empty($integrationComplexityIssues)) {
+            $comment .= "**Integration Methods:**\n\n";
+            $comment .= "```\n";
+            foreach ($integrationComplexityIssues as $issue) {
+                $methodName = isset($issue['method']) ? $issue['method'] : 'Unknown';
+                $comment .= basename($issue['file']) . ":" . $issue['line'] . " - " . $methodName . "() - CRAP: " . number_format($issue['crap_score'], 0) . "\n";
+                $comment .= "  " . $issue['message'] . "\n\n";
+            }
+            $comment .= "```\n\n";
+        }
+        
+        $comment .= "</details>\n\n";
     }
     
     // Code duplication section (commented out - only focusing on PHPMD)
