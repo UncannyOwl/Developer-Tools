@@ -105,25 +105,25 @@ if (empty($filesToAnalyze)) {
 
 // Run PHPMD analysis
 echo "\n=== Running PHPMD Analysis ===\n";
-$phpmdCommand = escapeshellarg($phpmdBin) . ' ' . 
+$phpmdCommand = 'php -d memory_limit=512M ' . escapeshellarg($phpmdBin) . ' ' . 
                implode(' ', array_map('escapeshellarg', $filesToAnalyze)) . 
                ' text cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
 
 echo "Command: $phpmdCommand\n";
 $phpmdOutput = [];
 $phpmdReturnVar = 0;
-exec($phpmdCommand, $phpmdOutput, $phpmdReturnVar);
+exec($phpmdCommand . ' 2>/dev/null', $phpmdOutput, $phpmdReturnVar);
 
 // Run PHPCBF analysis for code duplication
 echo "\n=== Running PHPCBF Analysis ===\n";
-$phpcpdCommand = escapeshellarg($phpcpdBin) . ' ' . 
+$phpcpdCommand = 'php -d memory_limit=512M ' . escapeshellarg($phpcpdBin) . ' ' . 
                 implode(' ', array_map('escapeshellarg', $filesToAnalyze)) . 
-                ' --exclude vendor --exclude tests --exclude node_modules';
+                ' --exclude vendor --exclude tests --exclude node_modules --min-lines 5 --min-tokens 70';
 
 echo "Command: $phpcpdCommand\n";
 $phpcpdOutput = [];
 $phpcpdReturnVar = 0;
-exec($phpcpdCommand, $phpcpdOutput, $phpcpdReturnVar);
+exec($phpcpdCommand . ' 2>/dev/null', $phpcpdOutput, $phpcpdReturnVar);
 
 // Parse PHPMD output for CRAP score calculation
 $crapScores = [];
