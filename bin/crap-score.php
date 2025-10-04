@@ -135,8 +135,14 @@ $coreFiles = [];
 $integrationFiles = [];
 
 if ($isPrMode && !empty($filesToAnalyze)) {
-    // Categorize changed files
+    // Categorize changed files (exclude test files)
     foreach ($filesToAnalyze as $file) {
+        // Skip test files
+        if (strpos($file, '/tests/') !== false || strpos($file, '/test/') !== false || 
+            strpos($file, 'Test.php') !== false || strpos($file, 'test-') !== false) {
+            continue;
+        }
+        
         if (strpos($file, 'src/integrations/') === 0) {
             $integrationFiles[] = $file;
         } else {
@@ -368,11 +374,16 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 $classComplexity = (int)$classComplexityMatches[2];
                                 if ($classComplexity > 50) { // Threshold for high class complexity
                                     $coreHighComplexityClasses++;
+                                    
+                                    // Check if class has tests
+                                    $hasTests = checkClassHasTests($fileName, $className);
+                                    
                                     $coreClassIssues[] = [
                                         'file' => basename($fileName),
                                         'line' => $lineNumber,
                                         'class' => $className,
                                         'complexity' => $classComplexity,
+                                        'hasTests' => $hasTests,
                                         'message' => $message
                                     ];
                                 }
@@ -449,11 +460,16 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 $classComplexity = (int)$classComplexityMatches[2];
                                 if ($classComplexity > 50) { // Threshold for high class complexity
                                     $integrationHighComplexityClasses++;
+                                    
+                                    // Check if class has tests
+                                    $hasTests = checkClassHasTests($fileName, $className);
+                                    
                                     $integrationClassIssues[] = [
                                         'file' => basename($fileName),
                                         'line' => $lineNumber,
                                         'class' => $className,
                                         'complexity' => $classComplexity,
+                                        'hasTests' => $hasTests,
                                         'message' => $message
                                     ];
                                 }
@@ -787,6 +803,26 @@ function findTestFilesForMethod($filePath, $methodName) {
     return array_unique($testFiles);
 }
 
+function checkClassHasTests($filePath, $className) {
+    global $projectRootDir;
+    
+    // Look for test files that might test this class
+    $testFiles = findTestFilesForMethod($filePath, $className);
+    
+    if (empty($testFiles)) {
+        return false; // No tests found
+    }
+    
+    // Check if any test files actually test this specific class
+    foreach ($testFiles as $testFile) {
+        if (testFileCoversMethod($testFile, $className)) {
+            return true; // Class is tested
+        }
+    }
+    
+    return false; // Test file exists but doesn't specifically test this class
+}
+
 function testFileCoversMethod($testFilePath, $methodName) {
     if (!file_exists($testFilePath)) {
         return false;
@@ -1086,6 +1122,11 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     $comment .= "- **601+:** 🚨 Critical - Refactor urgently when touched\n\n";
     
     if (!empty($coreComplexityIssues)) {
+        // Filter out methods with CRAP score 0-200
+        $coreComplexityIssues = array_filter($coreComplexityIssues, function($issue) {
+            return $issue['crap_score'] > 200;
+        });
+        
         // Sort by CRAP score (highest to lowest)
         usort($coreComplexityIssues, function($a, $b) {
             return $b['crap_score'] <=> $a['crap_score'];
@@ -1097,21 +1138,27 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
         
         $count = 0;
         foreach ($coreComplexityIssues as $issue) {
-            if ($count >= 10) { // Limit to first 10 for readability
-                $remaining = count($coreComplexityIssues) - 10;
+            if ($count >= 20) { // Show first 20 methods
+                $remaining = count($coreComplexityIssues) - 20;
                 $comment .= "| ... | ... | ... | ... | *$remaining more methods* |\n";
                 break;
             }
             $file = basename($issue['file']);
             $methodName = isset($issue['method']) ? $issue['method'] : 'Unknown';
             $complexity = isset($issue['complexity']) ? $issue['complexity'] : 'N/A';
-            $comment .= "| `$file` | {$issue['line']} | `$methodName()` | **" . number_format($issue['crap_score'], 0) . "** | $complexity |\n";
+            $testComment = (isset($issue['coverage']) && $issue['coverage'] > 0) ? " ✅ Tests found" : "";
+            $comment .= "| `$file` | {$issue['line']} | `$methodName()` | **" . number_format($issue['crap_score'], 0) . "** | $complexity$testComment |\n";
             $count++;
         }
         $comment .= "\n";
     }
     
     if (!empty($integrationComplexityIssues)) {
+        // Filter out methods with CRAP score 0-200
+        $integrationComplexityIssues = array_filter($integrationComplexityIssues, function($issue) {
+            return $issue['crap_score'] > 200;
+        });
+        
         // Sort by CRAP score (highest to lowest)
         usort($integrationComplexityIssues, function($a, $b) {
             return $b['crap_score'] <=> $a['crap_score'];
@@ -1123,15 +1170,16 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
         
         $count = 0;
         foreach ($integrationComplexityIssues as $issue) {
-            if ($count >= 10) { // Limit to first 10 for readability
-                $remaining = count($integrationComplexityIssues) - 10;
+            if ($count >= 20) { // Show first 20 methods
+                $remaining = count($integrationComplexityIssues) - 20;
                 $comment .= "| ... | ... | ... | ... | *$remaining more methods* |\n";
                 break;
             }
             $file = basename($issue['file']);
             $methodName = isset($issue['method']) ? $issue['method'] : 'Unknown';
             $complexity = isset($issue['complexity']) ? $issue['complexity'] : 'N/A';
-            $comment .= "| `$file` | {$issue['line']} | `$methodName()` | **" . number_format($issue['crap_score'], 0) . "** | $complexity |\n";
+            $testComment = (isset($issue['coverage']) && $issue['coverage'] > 0) ? " ✅ Tests found" : "";
+            $comment .= "| `$file` | {$issue['line']} | `$methodName()` | **" . number_format($issue['crap_score'], 0) . "** | $complexity$testComment |\n";
             $count++;
         }
         $comment .= "\n";
@@ -1182,12 +1230,13 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
             
             $count = 0;
             foreach ($coreClassIssues as $issue) {
-                if ($count >= 10) { // Limit to first 10 for readability
-                    $remaining = count($coreClassIssues) - 10;
+                if ($count >= 50) { // Show first 50 classes
+                    $remaining = count($coreClassIssues) - 50;
                     $comment .= "| ... | ... | ... | *$remaining more classes* |\n";
                     break;
                 }
-                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** |\n";
+                $testComment = (isset($issue['hasTests']) && $issue['hasTests']) ? " ✅ Tests found" : "";
+                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "**$testComment |\n";
                 $count++;
             }
             $comment .= "\n";
@@ -1205,12 +1254,13 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
             
             $count = 0;
             foreach ($integrationClassIssues as $issue) {
-                if ($count >= 10) { // Limit to first 10 for readability
-                    $remaining = count($integrationClassIssues) - 10;
+                if ($count >= 50) { // Show first 50 classes
+                    $remaining = count($integrationClassIssues) - 50;
                     $comment .= "| ... | ... | ... | *$remaining more classes* |\n";
                     break;
                 }
-                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** |\n";
+                $testComment = (isset($issue['hasTests']) && $issue['hasTests']) ? " ✅ Tests found" : "";
+                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "**$testComment |\n";
                 $count++;
             }
             $comment .= "\n";
