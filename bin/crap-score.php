@@ -190,34 +190,44 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                 continue;
             }
             
-            $fileCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+            $fileCommand = 'php -d memory_limit=' . $memoryLimit . ' -d error_reporting=0 ' . escapeshellarg($phpmdBin) . ' ' .
                           escapeshellarg($file) .
                           ' xml cleancode,codesize,controversial,design,naming,unusedcode';
-            
+
             echo "Analyzing: $file\n";
             $fileOutput = [];
             $fileReturnVar = 0;
             exec($fileCommand . ' 2>&1', $fileOutput, $fileReturnVar);
             
-            // Debug: Show first few lines of output
-            if (!empty($fileOutput)) {
-                echo "  PHPMD output (first 3 lines):\n";
-                foreach (array_slice($fileOutput, 0, 3) as $line) {
-                    echo "    $line\n";
+                // Debug: Show first few lines of output
+                if (!empty($fileOutput)) {
+                    echo "  PHPMD output (first 3 lines):\n";
+                    foreach (array_slice($fileOutput, 0, 3) as $line) {
+                        echo "    $line\n";
+                    }
+                } else {
+                    echo "  No PHPMD output for this file\n";
                 }
-            } else {
-                echo "  No PHPMD output for this file\n";
-            }
+                
+                // Filter out deprecation warnings and extract only XML content
+                $xmlLines = array_filter($fileOutput, function($line) {
+                    return !preg_match('/^(PHP Deprecated|Deprecated:|Warning:|Notice:)/', $line);
+                });
+                
+                if (empty($xmlLines)) {
+                    echo "  No valid XML output after filtering warnings\n";
+                    continue;
+                }
             
             // Merge output (skip XML header for subsequent files)
             if (empty($integrationPhpmdOutput)) {
-                $integrationPhpmdOutput = $fileOutput;
+                $integrationPhpmdOutput = $xmlLines;
             } else {
                 // Remove XML header and footer from subsequent files
-                $fileOutput = array_filter($fileOutput, function($line) {
+                $xmlLines = array_filter($xmlLines, function($line) {
                     return !preg_match('/^<\?xml|^<\/pmd>|^<pmd/', $line);
                 });
-                $integrationPhpmdOutput = array_merge($integrationPhpmdOutput, $fileOutput);
+                $integrationPhpmdOutput = array_merge($integrationPhpmdOutput, $xmlLines);
             }
         }
         
@@ -313,8 +323,9 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                         // echo "Core violation: $message\n";
 
                         // Extract cyclomatic complexity
-                        if (preg_match('/has a Cyclomatic Complexity of (\d+)/', $message, $complexityMatches)) {
-                            $complexity = (int)$complexityMatches[1];
+                        if (preg_match('/The method (\w+)\(\) has a Cyclomatic Complexity of (\d+)/', $message, $complexityMatches)) {
+                            $methodName = $complexityMatches[1];
+                            $complexity = (int)$complexityMatches[2];
                             $coreTotalMethods++;
 
                             // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
@@ -334,8 +345,10 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                             if ($crapScore > 100) { // High CRAP score threshold for legacy project
                                 $coreHighCrapMethods++;
                                 $coreComplexityIssues[] = [
-                                    'file' => $fileName,
+                                    'file' => basename($fileName),
                                     'line' => $lineNumber,
+                                    'method' => $methodName,
+                                    'complexity' => $complexity,
                                     'crap_score' => $crapScore,
                                     'message' => $message
                                 ];
@@ -366,8 +379,9 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                         // echo "Integration violation: $message\n";
 
                         // Extract cyclomatic complexity
-                        if (preg_match('/has a Cyclomatic Complexity of (\d+)/', $message, $complexityMatches)) {
-                            $complexity = (int)$complexityMatches[1];
+                        if (preg_match('/The method (\w+)\(\) has a Cyclomatic Complexity of (\d+)/', $message, $complexityMatches)) {
+                            $methodName = $complexityMatches[1];
+                            $complexity = (int)$complexityMatches[2];
                             $integrationTotalMethods++;
 
                             // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
@@ -387,8 +401,10 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                             if ($crapScore > 100) { // High CRAP score threshold for legacy project
                                 $integrationHighCrapMethods++;
                                 $integrationComplexityIssues[] = [
-                                    'file' => $fileName,
+                                    'file' => basename($fileName),
                                     'line' => $lineNumber,
+                                    'method' => $methodName,
+                                    'complexity' => $complexity,
                                     'crap_score' => $crapScore,
                                     'message' => $message
                                 ];
