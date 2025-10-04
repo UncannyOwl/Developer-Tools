@@ -103,11 +103,15 @@ if (empty($filesToAnalyze)) {
     $filesToAnalyze = ['.'];
 }
 
+// Determine memory limit based on environment
+$isLocal = !isset($_ENV['CI']) && !isset($_ENV['GITHUB_ACTIONS']) && !isset($_ENV['BUDDY']);
+$memoryLimit = $isLocal ? '2G' : '512M';
+
 // Run PHPMD analysis
 echo "\n=== Running PHPMD Analysis ===\n";
-$phpmdCommand = 'php -d memory_limit=512M ' . escapeshellarg($phpmdBin) . ' ' . 
+$phpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' . 
                implode(' ', array_map('escapeshellarg', $filesToAnalyze)) . 
-               ' text cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
+               ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
 
 echo "Command: $phpmdCommand\n";
 $phpmdOutput = [];
@@ -116,7 +120,7 @@ exec($phpmdCommand . ' 2>/dev/null', $phpmdOutput, $phpmdReturnVar);
 
 // Run PHPCBF analysis for code duplication
 echo "\n=== Running PHPCBF Analysis ===\n";
-$phpcpdCommand = 'php -d memory_limit=512M ' . escapeshellarg($phpcpdBin) . ' ' . 
+$phpcpdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpcpdBin) . ' ' . 
                 implode(' ', array_map('escapeshellarg', $filesToAnalyze)) . 
                 ' --exclude vendor --exclude tests --exclude node_modules --min-lines 5 --min-tokens 70';
 
@@ -125,45 +129,104 @@ $phpcpdOutput = [];
 $phpcpdReturnVar = 0;
 exec($phpcpdCommand . ' 2>/dev/null', $phpcpdOutput, $phpcpdReturnVar);
 
-// Parse PHPMD output for CRAP score calculation
+// Parse PHPMD XML output for CRAP score calculation
 $crapScores = [];
 $complexityIssues = [];
 $totalMethods = 0;
 $highCrapMethods = 0;
 
-foreach ($phpmdOutput as $line) {
-    if (preg_match('/^(.+):(\d+)\s+(.+)$/', $line, $matches)) {
-        $file = $matches[1];
-        $lineNumber = $matches[2];
-        $message = $matches[3];
-        
-        // Extract cyclomatic complexity
-        if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
-            $complexity = (int)$complexityMatches[1];
-            $totalMethods++;
+// Join the output into a single XML string
+$xmlOutput = implode("\n", $phpmdOutput);
+
+// Parse XML if we have output
+if (!empty($xmlOutput) && strpos($xmlOutput, '<?xml') !== false) {
+    try {
+        $xml = simplexml_load_string($xmlOutput);
+        if ($xml !== false) {
+            // Look for files with violations
+            foreach ($xml->file as $file) {
+                $fileName = (string)$file['name'];
+                
+                foreach ($file->violation as $violation) {
+                    $lineNumber = (int)$violation['beginline'];
+                    $message = (string)$violation;
+                    
+                    // Extract cyclomatic complexity
+                    if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
+                        $complexity = (int)$complexityMatches[1];
+                        $totalMethods++;
+                        
+                        // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
+                        // For now, assume 0% coverage if not provided
+                        $coverage = 0; // This would need to be calculated from test coverage
+                        $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
+                        
+                        $crapScores[] = [
+                            'file' => $fileName,
+                            'line' => $lineNumber,
+                            'complexity' => $complexity,
+                            'coverage' => $coverage,
+                            'crap_score' => $crapScore,
+                            'message' => $message
+                        ];
+                        
+                        if ($crapScore > 30) { // High CRAP score threshold
+                            $highCrapMethods++;
+                            $complexityIssues[] = [
+                                'file' => $fileName,
+                                'line' => $lineNumber,
+                                'crap_score' => $crapScore,
+                                'message' => $message
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    } catch (Exception $e) {
+        echo "Error parsing PHPMD XML: " . $e->getMessage() . "\n";
+    }
+} else {
+    // Fallback to text parsing if XML parsing fails
+    echo "PHPMD output (first 10 lines):\n";
+    foreach (array_slice($phpmdOutput, 0, 10) as $line) {
+        echo "  $line\n";
+    }
+    
+    foreach ($phpmdOutput as $line) {
+        if (preg_match('/^(.+):(\d+)\s+(.+)$/', $line, $matches)) {
+            $file = $matches[1];
+            $lineNumber = $matches[2];
+            $message = $matches[3];
             
-            // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
-            // For now, assume 0% coverage if not provided
-            $coverage = 0; // This would need to be calculated from test coverage
-            $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
-            
-            $crapScores[] = [
-                'file' => $file,
-                'line' => $lineNumber,
-                'complexity' => $complexity,
-                'coverage' => $coverage,
-                'crap_score' => $crapScore,
-                'message' => $message
-            ];
-            
-            if ($crapScore > 30) { // High CRAP score threshold
-                $highCrapMethods++;
-                $complexityIssues[] = [
+            // Extract cyclomatic complexity
+            if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
+                $complexity = (int)$complexityMatches[1];
+                $totalMethods++;
+                
+                // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
+                // For now, assume 0% coverage if not provided
+                $coverage = 0; // This would need to be calculated from test coverage
+                $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
+                
+                $crapScores[] = [
                     'file' => $file,
                     'line' => $lineNumber,
+                    'complexity' => $complexity,
+                    'coverage' => $coverage,
                     'crap_score' => $crapScore,
                     'message' => $message
                 ];
+                
+                if ($crapScore > 30) { // High CRAP score threshold
+                    $highCrapMethods++;
+                    $complexityIssues[] = [
+                        'file' => $file,
+                        'line' => $lineNumber,
+                        'crap_score' => $crapScore,
+                        'message' => $message
+                    ];
+                }
             }
         }
     }
