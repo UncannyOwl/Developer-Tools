@@ -190,14 +190,52 @@ $memoryLimit = $isLocal ? '2G' : '512M';
         $integrationPhpmdOutput = [];
         $integrationPhpmdReturnVar = 0;
     } else {
-        $integrationPhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
-                                  implode(' ', array_map('escapeshellarg', $integrationFiles)) .
-                                  ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
-
-        echo "Command: $integrationPhpmdCommand\n";
+        echo "Files being analyzed: " . count($integrationFiles) . " files\n";
         $integrationPhpmdOutput = [];
         $integrationPhpmdReturnVar = 0;
-        exec($integrationPhpmdCommand . ' 2>&1', $integrationPhpmdOutput, $integrationPhpmdReturnVar);
+        
+        // Run PHPMD on each file individually to avoid command line length limits
+        foreach ($integrationFiles as $file) {
+            if (!file_exists($file)) {
+                echo "Warning: File $file does not exist, skipping.\n";
+                continue;
+            }
+            
+            $fileCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+                          escapeshellarg($file) .
+                          ' xml cleancode,codesize,controversial,design,naming,unusedcode';
+            
+            echo "Analyzing: $file\n";
+            $fileOutput = [];
+            $fileReturnVar = 0;
+            exec($fileCommand . ' 2>&1', $fileOutput, $fileReturnVar);
+            
+            // Debug: Show first few lines of output
+            if (!empty($fileOutput)) {
+                echo "  PHPMD output (first 3 lines):\n";
+                foreach (array_slice($fileOutput, 0, 3) as $line) {
+                    echo "    $line\n";
+                }
+            } else {
+                echo "  No PHPMD output for this file\n";
+            }
+            
+            // Merge output (skip XML header for subsequent files)
+            if (empty($integrationPhpmdOutput)) {
+                $integrationPhpmdOutput = $fileOutput;
+            } else {
+                // Remove XML header and footer from subsequent files
+                $fileOutput = array_filter($fileOutput, function($line) {
+                    return !preg_match('/^<\?xml|^<\/pmd>|^<pmd/', $line);
+                });
+                $integrationPhpmdOutput = array_merge($integrationPhpmdOutput, $fileOutput);
+            }
+        }
+        
+        // Add closing XML tag if we have output
+        if (!empty($integrationPhpmdOutput)) {
+            $integrationPhpmdOutput[] = '</pmd>';
+        }
     }
 
 // Run PHPCBF analysis for code duplication (commented out - only focusing on PHPMD)
