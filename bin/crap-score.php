@@ -617,59 +617,75 @@ function getBaseBranchCrapScores($filesToAnalyze, $phpmdBin, $memoryLimit) {
     
     $baseScores = [];
     
-    // Stash current changes temporarily
-    $stashOutput = [];
-    $stashReturnVar = 0;
-    exec('git stash push -m "temp-stash-for-crap-analysis" 2>&1', $stashOutput, $stashReturnVar);
-    
-    if ($stashReturnVar !== 0) {
-        echo "Warning: Could not stash changes, skipping base branch analysis\n";
-        return $baseScores;
-    }
+    echo "Analyzing base branch files directly...\n";
     
     try {
         // Analyze each file in the base branch
         foreach ($filesToAnalyze as $file) {
-            if (file_exists($file)) {
-                $command = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
-                          escapeshellarg($file) . ' xml cleancode,codesize,controversial,design,naming,unusedcode';
-                
-                $output = [];
-                $returnVar = 0;
-                exec($command . ' 2>&1', $output, $returnVar);
-                
-                if ($returnVar === 0 && !empty($output)) {
-                    $xml = implode("\n", $output);
-                    if (strpos($xml, '<?xml') !== false) {
-                        $fileScore = 0;
-                        try {
-                            $xmlObj = simplexml_load_string($xml);
-                            if ($xmlObj !== false) {
-                                foreach ($xmlObj->file as $fileNode) {
-                                    foreach ($fileNode->violation as $violation) {
-                                        $message = (string)$violation;
-                                        if (preg_match('/has a Cyclomatic Complexity of (\d+)/', $message, $matches)) {
-                                            $complexity = (int)$matches[1];
-                                            $crapScore = pow($complexity, 2) * (1 - 0); // Assuming 0% coverage
-                                            $fileScore += $crapScore;
-                                        }
+            echo "  Analyzing base branch file: $file\n";
+            
+            // Check if file exists in base branch
+            $checkFileOutput = [];
+            $checkFileReturnVar = 0;
+            exec("git show origin/pre-release:$file 2>&1", $checkFileOutput, $checkFileReturnVar);
+            
+            if ($checkFileReturnVar !== 0) {
+                echo "    File doesn't exist in base branch, skipping\n";
+                $baseScores[$file] = 0; // New file, no base score
+                continue;
+            }
+            
+            // Create temporary file with base branch content
+            $tempFile = tempnam(sys_get_temp_dir(), 'base_branch_');
+            file_put_contents($tempFile, implode("\n", $checkFileOutput));
+            
+            $command = 'php -d memory_limit=' . $memoryLimit . ' -d error_reporting=0 ' . escapeshellarg($phpmdBin) . ' ' .
+                      escapeshellarg($tempFile) . ' xml cleancode,codesize,controversial,design,naming,unusedcode';
+            
+            $output = [];
+            $returnVar = 0;
+            exec($command . ' 2>&1', $output, $returnVar);
+            
+            // Clean up temp file
+            unlink($tempFile);
+            
+            if ($returnVar === 0 && !empty($output)) {
+                $xml = implode("\n", $output);
+                if (strpos($xml, '<?xml') !== false) {
+                    $fileScore = 0;
+                    try {
+                        $xmlObj = simplexml_load_string($xml);
+                        if ($xmlObj !== false) {
+                            foreach ($xmlObj->file as $fileNode) {
+                                foreach ($fileNode->violation as $violation) {
+                                    $message = (string)$violation;
+                                    if (preg_match('/The method (\w+)\(\) has a Cyclomatic Complexity of (\d+)/', $message, $matches)) {
+                                        $complexity = (int)$matches[2];
+                                        $crapScore = pow($complexity, 2) * (1 - 0); // Assuming 0% coverage
+                                        $fileScore += $crapScore;
                                     }
                                 }
                             }
-                        } catch (Exception $e) {
-                            // Ignore XML parsing errors
                         }
-                        $baseScores[$file] = $fileScore;
+                    } catch (Exception $e) {
+                        // Ignore XML parsing errors
                     }
+                    $baseScores[$file] = $fileScore;
+                    echo "    Base branch CRAP score: $fileScore\n";
+                } else {
+                    echo "    No valid XML output from PHPMD\n";
+                    $baseScores[$file] = 0;
                 }
+            } else {
+                echo "    PHPMD failed or no output (return code: $returnVar)\n";
+                $baseScores[$file] = 0;
             }
         }
     } catch (Exception $e) {
         echo "Error analyzing base branch: " . $e->getMessage() . "\n";
     }
     
-    // Restore stashed changes
-    exec('git stash pop 2>&1', $restoreOutput, $restoreReturnVar);
+    // No need to restore changes since we didn't stash
     
     echo "Base branch analysis complete. Found scores for " . count($baseScores) . " files.\n";
     return $baseScores;
