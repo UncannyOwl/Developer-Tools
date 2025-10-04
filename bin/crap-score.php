@@ -103,20 +103,50 @@ if (empty($filesToAnalyze)) {
     $filesToAnalyze = ['.'];
 }
 
+// Separate files into core and integrations
+$coreFiles = [];
+$integrationFiles = [];
+
+if ($isPrMode && !empty($filesToAnalyze)) {
+    // Categorize changed files
+    foreach ($filesToAnalyze as $file) {
+        if (strpos($file, 'src/integrations/') === 0) {
+            $integrationFiles[] = $file;
+        } else {
+            $coreFiles[] = $file;
+        }
+    }
+} else {
+    // For full analysis, we'll analyze core and integrations separately
+    $coreFiles = ['.'];
+    $integrationFiles = ['src/integrations'];
+}
+
 // Determine memory limit based on environment
 $isLocal = !isset($_ENV['CI']) && !isset($_ENV['GITHUB_ACTIONS']) && !isset($_ENV['BUDDY']);
 $memoryLimit = $isLocal ? '2G' : '512M';
 
-    // Run PHPMD analysis
-    echo "\n=== Running PHPMD Analysis ===\n";
-    $phpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
-                    implode(' ', array_map('escapeshellarg', $filesToAnalyze)) .
-                    ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
+    // Run PHPMD analysis for Core
+    echo "\n=== Running PHPMD Analysis - Core ===\n";
+    $corePhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+                        implode(' ', array_map('escapeshellarg', $coreFiles)) .
+                        ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules,src/integrations';
 
-    echo "Command: $phpmdCommand\n";
-    $phpmdOutput = [];
-    $phpmdReturnVar = 0;
-    exec($phpmdCommand . ' 2>&1', $phpmdOutput, $phpmdReturnVar);
+    echo "Command: $corePhpmdCommand\n";
+    $corePhpmdOutput = [];
+    $corePhpmdReturnVar = 0;
+    exec($corePhpmdCommand . ' 2>&1', $corePhpmdOutput, $corePhpmdReturnVar);
+
+    // Run PHPMD analysis for Integrations
+    echo "\n=== Running PHPMD Analysis - Integrations ===\n";
+    $integrationPhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+                              implode(' ', array_map('escapeshellarg', $integrationFiles)) .
+                              ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
+
+    echo "Command: $integrationPhpmdCommand\n";
+    $integrationPhpmdOutput = [];
+    $integrationPhpmdReturnVar = 0;
+    exec($integrationPhpmdCommand . ' 2>&1', $integrationPhpmdOutput, $integrationPhpmdReturnVar);
 
 // Run PHPCBF analysis for code duplication (commented out - only focusing on PHPMD)
 // echo "\n=== Running PHPCBF Analysis ===\n";
@@ -130,32 +160,51 @@ $memoryLimit = $isLocal ? '2G' : '512M';
 // exec($phpcpdCommand . ' 2>/dev/null', $phpcpdOutput, $phpcpdReturnVar);
 
     // Parse PHPMD XML output for CRAP score calculation
-    $crapScores = [];
-    $complexityIssues = [];
-    $totalMethods = 0;
-    $highCrapMethods = 0;
+    $coreCrapScores = [];
+    $integrationCrapScores = [];
+    $coreComplexityIssues = [];
+    $integrationComplexityIssues = [];
+    $coreTotalMethods = 0;
+    $integrationTotalMethods = 0;
+    $coreHighCrapMethods = 0;
+    $integrationHighCrapMethods = 0;
 
-    // Filter out warning messages and extract only XML content
-    $xmlLines = [];
+    // Parse Core results
+    $coreXmlLines = [];
     $inXml = false;
-    foreach ($phpmdOutput as $line) {
+    foreach ($corePhpmdOutput as $line) {
         if (strpos($line, '<?xml') === 0) {
             $inXml = true;
         }
         if ($inXml) {
-            $xmlLines[] = $line;
+            $coreXmlLines[] = $line;
         }
         if ($inXml && strpos($line, '</pmd>') !== false) {
             break;
         }
     }
+    $coreXmlOutput = implode("\n", $coreXmlLines);
 
-    $xmlOutput = implode("\n", $xmlLines);
+    // Parse Integration results
+    $integrationXmlLines = [];
+    $inXml = false;
+    foreach ($integrationPhpmdOutput as $line) {
+        if (strpos($line, '<?xml') === 0) {
+            $inXml = true;
+        }
+        if ($inXml) {
+            $integrationXmlLines[] = $line;
+        }
+        if ($inXml && strpos($line, '</pmd>') !== false) {
+            break;
+        }
+    }
+    $integrationXmlOutput = implode("\n", $integrationXmlLines);
 
-    // Parse XML if we have output
-    if (!empty($xmlOutput) && strpos($xmlOutput, '<?xml') !== false) {
+    // Parse Core XML if we have output
+    if (!empty($coreXmlOutput) && strpos($coreXmlOutput, '<?xml') !== false) {
         try {
-            $xml = simplexml_load_string($xmlOutput);
+            $xml = simplexml_load_string($coreXmlOutput);
             if ($xml !== false) {
                 // Look for files with violations
                 foreach ($xml->file as $file) {
@@ -168,14 +217,14 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                         // Extract cyclomatic complexity
                         if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
                             $complexity = (int)$complexityMatches[1];
-                            $totalMethods++;
+                            $coreTotalMethods++;
 
                             // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
                             // For now, assume 0% coverage if not provided
                             $coverage = 0; // This would need to be calculated from test coverage
                             $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
 
-                            $crapScores[] = [
+                            $coreCrapScores[] = [
                                 'file' => $fileName,
                                 'line' => $lineNumber,
                                 'complexity' => $complexity,
@@ -185,8 +234,8 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                             ];
 
                             if ($crapScore > 30) { // High CRAP score threshold
-                                $highCrapMethods++;
-                                $complexityIssues[] = [
+                                $coreHighCrapMethods++;
+                                $coreComplexityIssues[] = [
                                     'file' => $fileName,
                                     'line' => $lineNumber,
                                     'crap_score' => $crapScore,
@@ -198,68 +247,106 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                 }
             }
         } catch (Exception $e) {
-            echo "Error parsing PHPMD XML: " . $e->getMessage() . "\n";
-        }
-    } else {
-        // Fallback to text parsing if XML parsing fails
-        echo "PHPMD output (first 10 lines):\n";
-        foreach (array_slice($phpmdOutput, 0, 10) as $line) {
-            echo "  $line\n";
-        }
-
-        foreach ($phpmdOutput as $line) {
-            if (preg_match('/^(.+):(\d+)\s+(.+)$/', $line, $matches)) {
-                $file = $matches[1];
-                $lineNumber = $matches[2];
-                $message = $matches[3];
-
-                // Extract cyclomatic complexity
-                if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
-                    $complexity = (int)$complexityMatches[1];
-                    $totalMethods++;
-
-                    // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
-                    // For now, assume 0% coverage if not provided
-                    $coverage = 0; // This would need to be calculated from test coverage
-                    $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
-
-                    $crapScores[] = [
-                        'file' => $file,
-                        'line' => $lineNumber,
-                        'complexity' => $complexity,
-                        'coverage' => $coverage,
-                        'crap_score' => $crapScore,
-                        'message' => $message
-                    ];
-
-                    if ($crapScore > 30) { // High CRAP score threshold
-                        $highCrapMethods++;
-                        $complexityIssues[] = [
-                            'file' => $file,
-                            'line' => $lineNumber,
-                            'crap_score' => $crapScore,
-                            'message' => $message
-                        ];
-                    }
-                }
-            }
+            echo "Error parsing Core PHPMD XML: " . $e->getMessage() . "\n";
         }
     }
 
-// Calculate overall metrics
-$averageCrapScore = $totalMethods > 0 ? array_sum(array_column($crapScores, 'crap_score')) / $totalMethods : 0;
-$maxCrapScore = $totalMethods > 0 ? max(array_column($crapScores, 'crap_score')) : 0;
+    // Parse Integration XML if we have output
+    if (!empty($integrationXmlOutput) && strpos($integrationXmlOutput, '<?xml') !== false) {
+        try {
+            $xml = simplexml_load_string($integrationXmlOutput);
+            if ($xml !== false) {
+                // Look for files with violations
+                foreach ($xml->file as $file) {
+                    $fileName = (string)$file['name'];
+
+                    foreach ($file->violation as $violation) {
+                        $lineNumber = (int)$violation['beginline'];
+                        $message = (string)$violation;
+
+                        // Extract cyclomatic complexity
+                        if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
+                            $complexity = (int)$complexityMatches[1];
+                            $integrationTotalMethods++;
+
+                            // Calculate CRAP score (simplified: complexity^2 * (1 - coverage/100))
+                            // For now, assume 0% coverage if not provided
+                            $coverage = 0; // This would need to be calculated from test coverage
+                            $crapScore = pow($complexity, 2) * (1 - $coverage / 100);
+
+                            $integrationCrapScores[] = [
+                                'file' => $fileName,
+                                'line' => $lineNumber,
+                                'complexity' => $complexity,
+                                'coverage' => $coverage,
+                                'crap_score' => $crapScore,
+                                'message' => $message
+                            ];
+
+                            if ($crapScore > 30) { // High CRAP score threshold
+                                $integrationHighCrapMethods++;
+                                $integrationComplexityIssues[] = [
+                                    'file' => $fileName,
+                                    'line' => $lineNumber,
+                                    'crap_score' => $crapScore,
+                                    'message' => $message
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            echo "Error parsing Integration PHPMD XML: " . $e->getMessage() . "\n";
+        }
+    }
+
+// Calculate metrics for Core and Integrations separately
+$coreAverageCrapScore = $coreTotalMethods > 0 ? array_sum(array_column($coreCrapScores, 'crap_score')) / $coreTotalMethods : 0;
+$coreMaxCrapScore = $coreTotalMethods > 0 ? max(array_column($coreCrapScores, 'crap_score')) : 0;
+
+$integrationAverageCrapScore = $integrationTotalMethods > 0 ? array_sum(array_column($integrationCrapScores, 'crap_score')) / $integrationTotalMethods : 0;
+$integrationMaxCrapScore = $integrationTotalMethods > 0 ? max(array_column($integrationCrapScores, 'crap_score')) : 0;
+
+// Overall metrics
+$totalMethods = $coreTotalMethods + $integrationTotalMethods;
+$totalHighCrapMethods = $coreHighCrapMethods + $integrationHighCrapMethods;
+$allCrapScores = array_merge($coreCrapScores, $integrationCrapScores);
+$averageCrapScore = $totalMethods > 0 ? array_sum(array_column($allCrapScores, 'crap_score')) / $totalMethods : 0;
+$maxCrapScore = $totalMethods > 0 ? max(array_column($allCrapScores, 'crap_score')) : 0;
 
 // Generate report
 echo "\n=== CRAP Score Report ===\n";
-echo "Total methods analyzed: $totalMethods\n";
-echo "Average CRAP score: " . number_format($averageCrapScore, 2) . "\n";
-echo "Maximum CRAP score: " . number_format($maxCrapScore, 2) . "\n";
-echo "Methods with high CRAP score (>30): $highCrapMethods\n";
+echo "\n--- CORE ---\n";
+echo "Core methods analyzed: $coreTotalMethods\n";
+echo "Core average CRAP score: " . number_format($coreAverageCrapScore, 2) . "\n";
+echo "Core maximum CRAP score: " . number_format($coreMaxCrapScore, 2) . "\n";
+echo "Core methods with high CRAP score (>30): $coreHighCrapMethods\n";
 
-if (!empty($complexityIssues)) {
-    echo "\n=== High CRAP Score Methods ===\n";
-    foreach ($complexityIssues as $issue) {
+echo "\n--- INTEGRATIONS ---\n";
+echo "Integration methods analyzed: $integrationTotalMethods\n";
+echo "Integration average CRAP score: " . number_format($integrationAverageCrapScore, 2) . "\n";
+echo "Integration maximum CRAP score: " . number_format($integrationMaxCrapScore, 2) . "\n";
+echo "Integration methods with high CRAP score (>30): $integrationHighCrapMethods\n";
+
+echo "\n--- OVERALL ---\n";
+echo "Total methods analyzed: $totalMethods\n";
+echo "Overall average CRAP score: " . number_format($averageCrapScore, 2) . "\n";
+echo "Overall maximum CRAP score: " . number_format($maxCrapScore, 2) . "\n";
+echo "Total methods with high CRAP score (>30): $totalHighCrapMethods\n";
+
+if (!empty($coreComplexityIssues)) {
+    echo "\n=== High CRAP Score Methods - CORE ===\n";
+    foreach ($coreComplexityIssues as $issue) {
+        echo "File: {$issue['file']}:{$issue['line']}\n";
+        echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
+        echo "Issue: {$issue['message']}\n\n";
+    }
+}
+
+if (!empty($integrationComplexityIssues)) {
+    echo "\n=== High CRAP Score Methods - INTEGRATIONS ===\n";
+    foreach ($integrationComplexityIssues as $issue) {
         echo "File: {$issue['file']}:{$issue['line']}\n";
         echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
         echo "Issue: {$issue['message']}\n\n";
@@ -276,7 +363,10 @@ if (!empty($complexityIssues)) {
 
 // Generate GitHub comment if in PR mode
 if ($isPrMode) {
-    $comment = generateGitHubComment($crapScores, $complexityIssues, $averageCrapScore, $maxCrapScore, $totalMethods, $highCrapMethods, []);
+    $comment = generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues, 
+                                   $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods,
+                                   $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods,
+                                   $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, []);
     
     // Save comment to file for GitHub Action to use
     file_put_contents($projectRootDir . '/crap-score-comment.md', $comment);
@@ -291,15 +381,31 @@ if ($isPrMode) {
 /**
  * Generate GitHub comment for PR
  */
-function generateGitHubComment($crapScores, $complexityIssues, $averageCrapScore, $maxCrapScore, $totalMethods, $highCrapMethods, $phpcpdOutput) {
+function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues,
+                              $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods,
+                              $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods,
+                              $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $phpcpdOutput) {
     $comment = "## 🔍 CRAP Score Analysis\n\n";
     
     // Summary
     $comment .= "### 📊 Summary\n";
+    $comment .= "#### Core\n";
+    $comment .= "- **Methods analyzed:** $coreTotalMethods\n";
+    $comment .= "- **Average CRAP score:** " . number_format($coreAverageCrapScore, 2) . "\n";
+    $comment .= "- **Maximum CRAP score:** " . number_format($coreMaxCrapScore, 2) . "\n";
+    $comment .= "- **High CRAP methods (>30):** $coreHighCrapMethods\n\n";
+    
+    $comment .= "#### Integrations\n";
+    $comment .= "- **Methods analyzed:** $integrationTotalMethods\n";
+    $comment .= "- **Average CRAP score:** " . number_format($integrationAverageCrapScore, 2) . "\n";
+    $comment .= "- **Maximum CRAP score:** " . number_format($integrationMaxCrapScore, 2) . "\n";
+    $comment .= "- **High CRAP methods (>30):** $integrationHighCrapMethods\n\n";
+    
+    $comment .= "#### Overall\n";
     $comment .= "- **Total methods analyzed:** $totalMethods\n";
-    $comment .= "- **Average CRAP score:** " . number_format($averageCrapScore, 2) . "\n";
-    $comment .= "- **Maximum CRAP score:** " . number_format($maxCrapScore, 2) . "\n";
-    $comment .= "- **High CRAP methods (>30):** $highCrapMethods\n\n";
+    $comment .= "- **Overall average CRAP score:** " . number_format($averageCrapScore, 2) . "\n";
+    $comment .= "- **Overall maximum CRAP score:** " . number_format($maxCrapScore, 2) . "\n";
+    $comment .= "- **Total high CRAP methods (>30):** $totalHighCrapMethods\n\n";
     
     // CRAP Score Interpretation
     $comment .= "### 📈 CRAP Score Interpretation\n";
@@ -308,12 +414,24 @@ function generateGitHubComment($crapScores, $complexityIssues, $averageCrapScore
     $comment .= "- **16-30:** High risk, needs refactoring\n";
     $comment .= "- **30+:** Very high risk, urgent refactoring needed\n\n";
     
-    if (!empty($complexityIssues)) {
-        $comment .= "### ⚠️ High CRAP Score Methods\n";
+    if (!empty($coreComplexityIssues)) {
+        $comment .= "### ⚠️ High CRAP Score Methods - Core\n";
         $comment .= "| File | Line | CRAP Score | Issue |\n";
         $comment .= "|------|------|------------|-------|\n";
         
-        foreach ($complexityIssues as $issue) {
+        foreach ($coreComplexityIssues as $issue) {
+            $file = basename($issue['file']);
+            $comment .= "| `$file` | {$issue['line']} | " . number_format($issue['crap_score'], 2) . " | {$issue['message']} |\n";
+        }
+        $comment .= "\n";
+    }
+    
+    if (!empty($integrationComplexityIssues)) {
+        $comment .= "### ⚠️ High CRAP Score Methods - Integrations\n";
+        $comment .= "| File | Line | CRAP Score | Issue |\n";
+        $comment .= "|------|------|------------|-------|\n";
+        
+        foreach ($integrationComplexityIssues as $issue) {
             $file = basename($issue['file']);
             $comment .= "| `$file` | {$issue['line']} | " . number_format($issue['crap_score'], 2) . " | {$issue['message']} |\n";
         }
@@ -332,11 +450,23 @@ function generateGitHubComment($crapScores, $complexityIssues, $averageCrapScore
     
     // Recommendations
     $comment .= "### 💡 Recommendations\n";
-    if ($highCrapMethods > 0) {
-        $comment .= "- Consider refactoring methods with high CRAP scores\n";
-        $comment .= "- Add unit tests to improve coverage\n";
-        $comment .= "- Break down complex methods into smaller, more manageable functions\n";
-    } else {
+    if ($coreHighCrapMethods > 0) {
+        $comment .= "#### Core Issues\n";
+        $comment .= "- **Priority:** High - Core code should have low CRAP scores\n";
+        $comment .= "- Consider refactoring core methods with high CRAP scores\n";
+        $comment .= "- Focus on reducing cyclomatic complexity in core functionality\n";
+        $comment .= "- Add unit tests to improve coverage for core methods\n\n";
+    }
+    
+    if ($integrationHighCrapMethods > 0) {
+        $comment .= "#### Integration Issues\n";
+        $comment .= "- **Priority:** Medium - Integration code often has higher complexity\n";
+        $comment .= "- Consider refactoring integration methods if CRAP scores are extremely high (>100)\n";
+        $comment .= "- Focus on reducing cyclomatic complexity where possible\n";
+        $comment .= "- Add integration tests to improve coverage\n\n";
+    }
+    
+    if ($coreHighCrapMethods == 0 && $integrationHighCrapMethods == 0) {
         $comment .= "- ✅ No high-risk methods detected\n";
         $comment .= "- Keep up the good work!\n";
     }
