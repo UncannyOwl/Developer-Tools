@@ -12,8 +12,25 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Check if we're running in PR mode
+// Check if we're running in PR mode or verbose mode
 $isPrMode = in_array('--pr', $argv);
+$isVerboseMode = in_array('--verbose', $argv) || in_array('-v', $argv);
+$showHelp = in_array('--help', $argv) || in_array('-h', $argv);
+
+if ($showHelp) {
+    echo "CRAP Score Analysis Tool\n\n";
+    echo "Usage: php crap-score.php [options]\n\n";
+    echo "Options:\n";
+    echo "  --pr        Analyze only changed files in PR\n";
+    echo "  --verbose   Show detailed method-by-method output\n";
+    echo "  --help      Show this help message\n\n";
+    echo "Examples:\n";
+    echo "  php crap-score.php                    # Analyze all files, summary only\n";
+    echo "  php crap-score.php --verbose          # Analyze all files, detailed output\n";
+    echo "  php crap-score.php --pr               # Analyze PR changes only\n";
+    echo "  php crap-score.php --pr --verbose     # Analyze PR changes with details\n";
+    exit(0);
+}
 
 // Get the script directory
 $scriptDir = dirname(__FILE__);
@@ -337,41 +354,60 @@ $allCrapScores = array_merge($coreCrapScores, $integrationCrapScores);
 $averageCrapScore = $totalMethods > 0 ? array_sum(array_column($allCrapScores, 'crap_score')) / $totalMethods : 0;
 $maxCrapScore = $totalMethods > 0 ? max(array_column($allCrapScores, 'crap_score')) : 0;
 
+// Calculate total CRAP score sum
+$coreTotalCrapScore = array_sum(array_column($coreCrapScores, 'crap_score'));
+$integrationTotalCrapScore = array_sum(array_column($integrationCrapScores, 'crap_score'));
+$overallTotalCrapScore = $coreTotalCrapScore + $integrationTotalCrapScore;
+
 // Generate report
 echo "\n=== CRAP Score Report ===\n";
 echo "\n--- CORE ---\n";
 echo "Core methods analyzed: $coreTotalMethods\n";
+echo "Core total CRAP score: " . number_format($coreTotalCrapScore, 2) . "\n";
 echo "Core average CRAP score: " . number_format($coreAverageCrapScore, 2) . "\n";
 echo "Core maximum CRAP score: " . number_format($coreMaxCrapScore, 2) . "\n";
 echo "Core methods with high CRAP score (>30): $coreHighCrapMethods\n";
 
 echo "\n--- INTEGRATIONS ---\n";
 echo "Integration methods analyzed: $integrationTotalMethods\n";
+echo "Integration total CRAP score: " . number_format($integrationTotalCrapScore, 2) . "\n";
 echo "Integration average CRAP score: " . number_format($integrationAverageCrapScore, 2) . "\n";
 echo "Integration maximum CRAP score: " . number_format($integrationMaxCrapScore, 2) . "\n";
 echo "Integration methods with high CRAP score (>30): $integrationHighCrapMethods\n";
 
 echo "\n--- OVERALL ---\n";
 echo "Total methods analyzed: $totalMethods\n";
+echo "TOTAL CRAP SCORE: " . number_format($overallTotalCrapScore, 2) . "\n";
 echo "Overall average CRAP score: " . number_format($averageCrapScore, 2) . "\n";
 echo "Overall maximum CRAP score: " . number_format($maxCrapScore, 2) . "\n";
 echo "Total methods with high CRAP score (>30): $totalHighCrapMethods\n";
 
-if (!empty($coreComplexityIssues)) {
-    echo "\n=== High CRAP Score Methods - CORE ===\n";
-    foreach ($coreComplexityIssues as $issue) {
-        echo "File: {$issue['file']}:{$issue['line']}\n";
-        echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
-        echo "Issue: {$issue['message']}\n\n";
+// Show individual methods only in verbose mode
+if ($isVerboseMode) {
+    if (!empty($coreComplexityIssues)) {
+        echo "\n=== High CRAP Score Methods - CORE ===\n";
+        foreach ($coreComplexityIssues as $issue) {
+            echo "File: {$issue['file']}:{$issue['line']}\n";
+            echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
+            echo "Issue: {$issue['message']}\n\n";
+        }
     }
-}
 
-if (!empty($integrationComplexityIssues)) {
-    echo "\n=== High CRAP Score Methods - INTEGRATIONS ===\n";
-    foreach ($integrationComplexityIssues as $issue) {
-        echo "File: {$issue['file']}:{$issue['line']}\n";
-        echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
-        echo "Issue: {$issue['message']}\n\n";
+    if (!empty($integrationComplexityIssues)) {
+        echo "\n=== High CRAP Score Methods - INTEGRATIONS ===\n";
+        foreach ($integrationComplexityIssues as $issue) {
+            echo "File: {$issue['file']}:{$issue['line']}\n";
+            echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
+            echo "Issue: {$issue['message']}\n\n";
+        }
+    }
+} else {
+    // Show summary of high CRAP methods
+    if ($coreHighCrapMethods > 0 || $integrationHighCrapMethods > 0) {
+        echo "\n=== High CRAP Score Methods Summary ===\n";
+        echo "Core methods with high CRAP score (>30): $coreHighCrapMethods\n";
+        echo "Integration methods with high CRAP score (>30): $integrationHighCrapMethods\n";
+        echo "Use --verbose flag to see individual method details\n";
     }
 }
 
@@ -386,9 +422,9 @@ if (!empty($integrationComplexityIssues)) {
 // Generate GitHub comment if in PR mode
 if ($isPrMode) {
     $comment = generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues, 
-                                   $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods,
-                                   $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods,
-                                   $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, []);
+                                   $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
+                                   $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
+                                   $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, []);
     
     // Save comment to file for GitHub Action to use
     file_put_contents($projectRootDir . '/crap-score-comment.md', $comment);
@@ -404,27 +440,30 @@ if ($isPrMode) {
  * Generate GitHub comment for PR
  */
 function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues,
-                              $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods,
-                              $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods,
-                              $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $phpcpdOutput) {
+                              $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
+                              $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
+                              $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, $phpcpdOutput) {
     $comment = "## 🔍 CRAP Score Analysis\n\n";
     
     // Summary
     $comment .= "### 📊 Summary\n";
     $comment .= "#### Core\n";
     $comment .= "- **Methods analyzed:** $coreTotalMethods\n";
+    $comment .= "- **Total CRAP score:** " . number_format($coreTotalCrapScore, 2) . "\n";
     $comment .= "- **Average CRAP score:** " . number_format($coreAverageCrapScore, 2) . "\n";
     $comment .= "- **Maximum CRAP score:** " . number_format($coreMaxCrapScore, 2) . "\n";
     $comment .= "- **High CRAP methods (>30):** $coreHighCrapMethods\n\n";
     
     $comment .= "#### Integrations\n";
     $comment .= "- **Methods analyzed:** $integrationTotalMethods\n";
+    $comment .= "- **Total CRAP score:** " . number_format($integrationTotalCrapScore, 2) . "\n";
     $comment .= "- **Average CRAP score:** " . number_format($integrationAverageCrapScore, 2) . "\n";
     $comment .= "- **Maximum CRAP score:** " . number_format($integrationMaxCrapScore, 2) . "\n";
     $comment .= "- **High CRAP methods (>30):** $integrationHighCrapMethods\n\n";
     
     $comment .= "#### Overall\n";
     $comment .= "- **Total methods analyzed:** $totalMethods\n";
+    $comment .= "- **TOTAL CRAP SCORE:** " . number_format($overallTotalCrapScore, 2) . "\n";
     $comment .= "- **Overall average CRAP score:** " . number_format($averageCrapScore, 2) . "\n";
     $comment .= "- **Overall maximum CRAP score:** " . number_format($maxCrapScore, 2) . "\n";
     $comment .= "- **Total high CRAP methods (>30):** $totalHighCrapMethods\n\n";
