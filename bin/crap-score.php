@@ -471,6 +471,100 @@ if ($isVerboseMode) {
         echo "Integration methods with high CRAP score (>100): $integrationHighCrapMethods\n";
         echo "Use --verbose flag to see individual method details\n";
     }
+    
+    // Show cyclomatic complexity methods for AI assistance
+    echo "\n=== Cyclomatic Complexity Methods (for AI refactoring) ===\n";
+    
+    // Core cyclomatic complexity methods
+    if (!empty($coreComplexityIssues)) {
+        echo "\n--- Core Methods ---\n";
+        foreach ($coreComplexityIssues as $issue) {
+            echo "File: {$issue['file']}\n";
+            echo "Line: {$issue['line']}\n";
+            echo "Method: {$issue['method']}\n";
+            echo "Complexity: {$issue['complexity']}\n";
+            echo "CRAP Score: {$issue['crap_score']}\n";
+            echo "---\n";
+        }
+    }
+    
+    // Integration cyclomatic complexity methods
+    if (!empty($integrationComplexityIssues)) {
+        echo "\n--- Integration Methods ---\n";
+        foreach ($integrationComplexityIssues as $issue) {
+            echo "File: {$issue['file']}\n";
+            echo "Line: {$issue['line']}\n";
+            echo "Method: {$issue['method']}\n";
+            echo "Complexity: {$issue['complexity']}\n";
+            echo "CRAP Score: {$issue['crap_score']}\n";
+            echo "---\n";
+        }
+    }
+    
+    if (empty($coreComplexityIssues) && empty($integrationComplexityIssues)) {
+        echo "No cyclomatic complexity issues found.\n";
+    }
+    
+    // Show before/after comparison for refactoring assessment
+    if ($isPrMode && !empty($filesToAnalyze)) {
+        echo "\n=== Refactoring Impact Analysis ===\n";
+        echo "Comparing CRAP scores: Base Branch vs PR\n";
+        echo "Files analyzed: " . count($filesToAnalyze) . "\n\n";
+        
+        // Get base branch CRAP scores for comparison
+        $baseBranchScores = getBaseBranchCrapScores($filesToAnalyze, $phpmdBin, $memoryLimit);
+        
+        if (!empty($baseBranchScores)) {
+            echo "--- Before/After Comparison ---\n";
+            $totalImprovement = 0;
+            $filesImproved = 0;
+            $filesWorsened = 0;
+            
+            foreach ($filesToAnalyze as $file) {
+                if (file_exists($file)) {
+                    $currentFile = basename($file);
+                    $currentScore = 0;
+                    $baseScore = isset($baseBranchScores[$file]) ? $baseBranchScores[$file] : 0;
+                    
+                    // Find current score for this file
+                    foreach (array_merge($coreComplexityIssues, $integrationComplexityIssues) as $issue) {
+                        if (strpos($issue['file'], $currentFile) !== false) {
+                            $currentScore += $issue['crap_score'];
+                        }
+                    }
+                    
+                    $improvement = $baseScore - $currentScore;
+                    $totalImprovement += $improvement;
+                    
+                    if ($improvement > 0) {
+                        $filesImproved++;
+                        echo "✅ $currentFile: $baseScore → $currentScore (Improved by $improvement)\n";
+                    } elseif ($improvement < 0) {
+                        $filesWorsened++;
+                        echo "❌ $currentFile: $baseScore → $currentScore (Worsened by " . abs($improvement) . ")\n";
+                    } else {
+                        echo "➖ $currentFile: $baseScore → $currentScore (No change)\n";
+                    }
+                }
+            }
+            
+            echo "\n--- Overall Assessment ---\n";
+            echo "Total CRAP score change: " . ($totalImprovement >= 0 ? "+" : "") . number_format($totalImprovement, 2) . "\n";
+            echo "Files improved: $filesImproved\n";
+            echo "Files worsened: $filesWorsened\n";
+            echo "Files unchanged: " . (count($filesToAnalyze) - $filesImproved - $filesWorsened) . "\n";
+            
+            if ($totalImprovement > 0) {
+                echo "🎉 Overall: Code quality IMPROVED by " . number_format($totalImprovement, 2) . " CRAP points\n";
+            } elseif ($totalImprovement < 0) {
+                echo "⚠️  Overall: Code quality WORSENED by " . number_format(abs($totalImprovement), 2) . " CRAP points\n";
+            } else {
+                echo "➖ Overall: No net change in code quality\n";
+            }
+        } else {
+            echo "Could not retrieve base branch scores for comparison.\n";
+        }
+    }
 }
 
 // Code duplication report (commented out - only focusing on PHPMD)
@@ -501,6 +595,70 @@ if ($isPrMode) {
 /**
  * Generate GitHub comment for PR
  */
+// Function to get base branch CRAP scores for comparison
+function getBaseBranchCrapScores($filesToAnalyze, $phpmdBin, $memoryLimit) {
+    echo "Analyzing base branch (origin/pre-release) for comparison...\n";
+    
+    $baseScores = [];
+    
+    // Stash current changes temporarily
+    $stashOutput = [];
+    $stashReturnVar = 0;
+    exec('git stash push -m "temp-stash-for-crap-analysis" 2>&1', $stashOutput, $stashReturnVar);
+    
+    if ($stashReturnVar !== 0) {
+        echo "Warning: Could not stash changes, skipping base branch analysis\n";
+        return $baseScores;
+    }
+    
+    try {
+        // Analyze each file in the base branch
+        foreach ($filesToAnalyze as $file) {
+            if (file_exists($file)) {
+                $command = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+                          escapeshellarg($file) . ' xml cleancode,codesize,controversial,design,naming,unusedcode';
+                
+                $output = [];
+                $returnVar = 0;
+                exec($command . ' 2>&1', $output, $returnVar);
+                
+                if ($returnVar === 0 && !empty($output)) {
+                    $xml = implode("\n", $output);
+                    if (strpos($xml, '<?xml') !== false) {
+                        $fileScore = 0;
+                        try {
+                            $xmlObj = simplexml_load_string($xml);
+                            if ($xmlObj !== false) {
+                                foreach ($xmlObj->file as $fileNode) {
+                                    foreach ($fileNode->violation as $violation) {
+                                        $message = (string)$violation;
+                                        if (preg_match('/has a Cyclomatic Complexity of (\d+)/', $message, $matches)) {
+                                            $complexity = (int)$matches[1];
+                                            $crapScore = pow($complexity, 2) * (1 - 0); // Assuming 0% coverage
+                                            $fileScore += $crapScore;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Exception $e) {
+                            // Ignore XML parsing errors
+                        }
+                        $baseScores[$file] = $fileScore;
+                    }
+                }
+            }
+        }
+    } catch (Exception $e) {
+        echo "Error analyzing base branch: " . $e->getMessage() . "\n";
+    }
+    
+    // Restore stashed changes
+    exec('git stash pop 2>&1', $restoreOutput, $restoreReturnVar);
+    
+    echo "Base branch analysis complete. Found scores for " . count($baseScores) . " files.\n";
+    return $baseScores;
+}
+
 function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues,
                               $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
                               $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
