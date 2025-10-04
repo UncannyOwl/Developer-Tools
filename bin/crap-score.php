@@ -185,13 +185,13 @@ $memoryLimit = $isLocal ? '2G' : '512M';
     }
     $coreXmlOutput = implode("\n", $coreXmlLines);
 
-    // Debug: Output Core XML for inspection
-    echo "\n=== Core PHPMD Raw Output (first 20 lines) ===\n";
-    foreach (array_slice($corePhpmdOutput, 0, 20) as $line) {
-        echo "$line\n";
-    }
-    echo "\n=== Core XML Output ===\n";
-    echo $coreXmlOutput . "\n";
+    // Debug: Output Core XML for inspection (commented out)
+    // echo "\n=== Core PHPMD Raw Output (first 20 lines) ===\n";
+    // foreach (array_slice($corePhpmdOutput, 0, 20) as $line) {
+    //     echo "$line\n";
+    // }
+    // echo "\n=== Core XML Output ===\n";
+    // echo $coreXmlOutput . "\n";
 
     // Parse Integration results
     $integrationXmlLines = [];
@@ -209,13 +209,13 @@ $memoryLimit = $isLocal ? '2G' : '512M';
     }
     $integrationXmlOutput = implode("\n", $integrationXmlLines);
 
-    // Debug: Output Integration XML for inspection
-    echo "\n=== Integration PHPMD Raw Output (first 20 lines) ===\n";
-    foreach (array_slice($integrationPhpmdOutput, 0, 20) as $line) {
-        echo "$line\n";
-    }
-    echo "\n=== Integration XML Output ===\n";
-    echo $integrationXmlOutput . "\n";
+    // Debug: Output Integration XML for inspection (commented out)
+    // echo "\n=== Integration PHPMD Raw Output (first 20 lines) ===\n";
+    // foreach (array_slice($integrationPhpmdOutput, 0, 20) as $line) {
+    //     echo "$line\n";
+    // }
+    // echo "\n=== Integration XML Output ===\n";
+    // echo $integrationXmlOutput . "\n";
 
     // Parse Core XML if we have output
     if (!empty($coreXmlOutput) && strpos($coreXmlOutput, '<?xml') !== false) {
@@ -230,11 +230,11 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                         $lineNumber = (int)$violation['beginline'];
                         $message = (string)$violation;
 
-                        // Debug: Output all violations to see what we're getting
-                        echo "Core violation: $message\n";
+                        // Debug: Output all violations to see what we're getting (commented out)
+                        // echo "Core violation: $message\n";
 
                         // Extract cyclomatic complexity
-                        if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
+                        if (preg_match('/has a Cyclomatic Complexity of (\d+)/', $message, $complexityMatches)) {
                             $complexity = (int)$complexityMatches[1];
                             $coreTotalMethods++;
 
@@ -283,11 +283,11 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                         $lineNumber = (int)$violation['beginline'];
                         $message = (string)$violation;
 
-                        // Debug: Output all violations to see what we're getting
-                        echo "Integration violation: $message\n";
+                        // Debug: Output all violations to see what we're getting (commented out)
+                        // echo "Integration violation: $message\n";
 
                         // Extract cyclomatic complexity
-                        if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
+                        if (preg_match('/has a Cyclomatic Complexity of (\d+)/', $message, $complexityMatches)) {
                             $complexity = (int)$complexityMatches[1];
                             $integrationTotalMethods++;
 
