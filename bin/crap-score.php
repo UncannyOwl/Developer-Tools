@@ -253,10 +253,16 @@ $memoryLimit = $isLocal ? '2G' : '512M';
     $integrationCrapScores = [];
     $coreComplexityIssues = [];
     $integrationComplexityIssues = [];
+    $coreClassIssues = [];
+    $integrationClassIssues = [];
     $coreTotalMethods = 0;
     $integrationTotalMethods = 0;
     $coreHighCrapMethods = 0;
     $integrationHighCrapMethods = 0;
+    $coreTotalClasses = 0;
+    $integrationTotalClasses = 0;
+    $coreHighComplexityClasses = 0;
+    $integrationHighComplexityClasses = 0;
 
     // Parse Core results
     $coreXmlLines = [];
@@ -354,6 +360,30 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 ];
                             }
                         }
+
+                        // Extract class-level violations
+                        $className = (string)$violation['class'];
+                        if (!empty($className)) {
+                            // Check for class complexity violations
+                            if (preg_match('/The class (\w+) has an overall complexity of (\d+)/', $message, $classComplexityMatches)) {
+                                $classComplexity = (int)$classComplexityMatches[2];
+                                if ($classComplexity > 50) { // Threshold for high class complexity
+                                    $coreHighComplexityClasses++;
+                                    $coreClassIssues[] = [
+                                        'file' => basename($fileName),
+                                        'line' => $lineNumber,
+                                        'class' => $className,
+                                        'complexity' => $classComplexity,
+                                        'message' => $message
+                                    ];
+                                }
+                            }
+                            
+                            // Count unique classes
+                            if (!isset($coreClassIssues[$className])) {
+                                $coreTotalClasses++;
+                            }
+                        }
                     }
                 }
             }
@@ -410,6 +440,30 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 ];
                             }
                         }
+
+                        // Extract class-level violations
+                        $className = (string)$violation['class'];
+                        if (!empty($className)) {
+                            // Check for class complexity violations
+                            if (preg_match('/The class (\w+) has an overall complexity of (\d+)/', $message, $classComplexityMatches)) {
+                                $classComplexity = (int)$classComplexityMatches[2];
+                                if ($classComplexity > 50) { // Threshold for high class complexity
+                                    $integrationHighComplexityClasses++;
+                                    $integrationClassIssues[] = [
+                                        'file' => basename($fileName),
+                                        'line' => $lineNumber,
+                                        'class' => $className,
+                                        'complexity' => $classComplexity,
+                                        'message' => $message
+                                    ];
+                                }
+                            }
+                            
+                            // Count unique classes
+                            if (!isset($integrationClassIssues[$className])) {
+                                $integrationTotalClasses++;
+                            }
+                        }
                     }
                 }
             }
@@ -441,17 +495,21 @@ $overallTotalCrapScore = $coreTotalCrapScore + $integrationTotalCrapScore;
 echo "\n=== CRAP Score Report ===\n";
 echo "\n--- CORE ---\n";
 echo "Core methods analyzed: $coreTotalMethods\n";
+echo "Core classes analyzed: $coreTotalClasses\n";
 echo "Core total CRAP score: " . number_format($coreTotalCrapScore, 2) . "\n";
 echo "Core average CRAP score: " . number_format($coreAverageCrapScore, 2) . "\n";
 echo "Core maximum CRAP score: " . number_format($coreMaxCrapScore, 2) . "\n";
 echo "Core methods with high CRAP score (>100): $coreHighCrapMethods\n";
+echo "Core classes with high complexity (>50): $coreHighComplexityClasses\n";
 
 echo "\n--- INTEGRATIONS ---\n";
 echo "Integration methods analyzed: $integrationTotalMethods\n";
+echo "Integration classes analyzed: $integrationTotalClasses\n";
 echo "Integration total CRAP score: " . number_format($integrationTotalCrapScore, 2) . "\n";
 echo "Integration average CRAP score: " . number_format($integrationAverageCrapScore, 2) . "\n";
 echo "Integration maximum CRAP score: " . number_format($integrationMaxCrapScore, 2) . "\n";
 echo "Integration methods with high CRAP score (>100): $integrationHighCrapMethods\n";
+echo "Integration classes with high complexity (>50): $integrationHighComplexityClasses\n";
 
 echo "\n--- OVERALL ---\n";
 echo "Total methods analyzed: $totalMethods\n";
@@ -476,6 +534,27 @@ if ($isVerboseMode) {
         foreach ($integrationComplexityIssues as $issue) {
             echo "File: {$issue['file']}:{$issue['line']}\n";
             echo "CRAP Score: " . number_format($issue['crap_score'], 2) . "\n";
+            echo "Issue: {$issue['message']}\n\n";
+        }
+    }
+
+    // Show class-level issues
+    if (!empty($coreClassIssues)) {
+        echo "\n=== High Complexity Classes - CORE ===\n";
+        foreach ($coreClassIssues as $issue) {
+            echo "File: {$issue['file']}:{$issue['line']}\n";
+            echo "Class: {$issue['class']}\n";
+            echo "Complexity: {$issue['complexity']}\n";
+            echo "Issue: {$issue['message']}\n\n";
+        }
+    }
+
+    if (!empty($integrationClassIssues)) {
+        echo "\n=== High Complexity Classes - INTEGRATIONS ===\n";
+        foreach ($integrationClassIssues as $issue) {
+            echo "File: {$issue['file']}:{$issue['line']}\n";
+            echo "Class: {$issue['class']}\n";
+            echo "Complexity: {$issue['complexity']}\n";
             echo "Issue: {$issue['message']}\n\n";
         }
     }
@@ -596,9 +675,9 @@ if ($isPrMode) {
     // Fetch baseline data for comparison
     $baselineData = getBaselineCrapScores();
     
-    $comment = generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues, 
-                                   $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
-                                   $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
+    $comment = generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues, $coreClassIssues, $integrationClassIssues,
+                                   $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore, $coreTotalClasses, $coreHighComplexityClasses,
+                                   $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore, $integrationTotalClasses, $integrationHighComplexityClasses,
                                    $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, [], $baselineData);
     
     // Save comment to file for GitHub Action to use
@@ -816,9 +895,9 @@ function getBaseBranchCrapScores($filesToAnalyze, $phpmdBin, $memoryLimit) {
     return $baseScores;
 }
 
-function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues,
-                              $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
-                              $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
+function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues, $coreClassIssues, $integrationClassIssues,
+                              $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore, $coreTotalClasses, $coreHighComplexityClasses,
+                              $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore, $integrationTotalClasses, $integrationHighComplexityClasses,
                               $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, $phpcpdOutput, $baselineData = null) {
     $comment = "## 🔍 CRAP Score Analysis\n\n";
     
@@ -826,17 +905,21 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     $comment .= "### 📊 Summary\n";
     $comment .= "#### Core\n";
     $comment .= "- **Methods analyzed:** $coreTotalMethods\n";
+    $comment .= "- **Classes analyzed:** $coreTotalClasses\n";
     $comment .= "- **Total CRAP score:** " . number_format($coreTotalCrapScore, 2) . "\n";
     $comment .= "- **Average CRAP score:** " . number_format($coreAverageCrapScore, 2) . "\n";
     $comment .= "- **Maximum CRAP score:** " . number_format($coreMaxCrapScore, 2) . "\n";
-    $comment .= "- **High CRAP methods (>100):** $coreHighCrapMethods\n\n";
+    $comment .= "- **High CRAP methods (>100):** $coreHighCrapMethods\n";
+    $comment .= "- **High complexity classes (>50):** $coreHighComplexityClasses\n\n";
     
     $comment .= "#### Integrations\n";
     $comment .= "- **Methods analyzed:** $integrationTotalMethods\n";
+    $comment .= "- **Classes analyzed:** $integrationTotalClasses\n";
     $comment .= "- **Total CRAP score:** " . number_format($integrationTotalCrapScore, 2) . "\n";
     $comment .= "- **Average CRAP score:** " . number_format($integrationAverageCrapScore, 2) . "\n";
     $comment .= "- **Maximum CRAP score:** " . number_format($integrationMaxCrapScore, 2) . "\n";
-    $comment .= "- **High CRAP methods (>100):** $integrationHighCrapMethods\n\n";
+    $comment .= "- **High CRAP methods (>100):** $integrationHighCrapMethods\n";
+    $comment .= "- **High complexity classes (>50):** $integrationHighComplexityClasses\n\n";
     
     $comment .= "#### Overall\n";
     $comment .= "- **Total methods analyzed:** $totalMethods\n";
@@ -945,6 +1028,47 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
         }
         
         $comment .= "</details>\n\n";
+    }
+
+    // Add class-level issues section
+    if (!empty($coreClassIssues) || !empty($integrationClassIssues)) {
+        $comment .= "### 🏗️ High Complexity Classes\n";
+        
+        if (!empty($coreClassIssues)) {
+            $comment .= "#### Core Classes\n";
+            $comment .= "| File | Line | Class | Complexity | Issue |\n";
+            $comment .= "|------|------|-------|------------|-------|\n";
+            
+            $count = 0;
+            foreach ($coreClassIssues as $issue) {
+                if ($count >= 10) { // Limit to first 10 for readability
+                    $remaining = count($coreClassIssues) - 10;
+                    $comment .= "| ... | ... | ... | ... | *$remaining more classes* |\n";
+                    break;
+                }
+                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** | " . $issue['message'] . " |\n";
+                $count++;
+            }
+            $comment .= "\n";
+        }
+        
+        if (!empty($integrationClassIssues)) {
+            $comment .= "#### Integration Classes\n";
+            $comment .= "| File | Line | Class | Complexity | Issue |\n";
+            $comment .= "|------|------|-------|------------|-------|\n";
+            
+            $count = 0;
+            foreach ($integrationClassIssues as $issue) {
+                if ($count >= 10) { // Limit to first 10 for readability
+                    $remaining = count($integrationClassIssues) - 10;
+                    $comment .= "| ... | ... | ... | ... | *$remaining more classes* |\n";
+                    break;
+                }
+                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** | " . $issue['message'] . " |\n";
+                $count++;
+            }
+            $comment .= "\n";
+        }
     }
     
     // Code duplication section (commented out - only focusing on PHPMD)
