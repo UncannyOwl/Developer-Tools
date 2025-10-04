@@ -379,8 +379,10 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 }
                             }
                             
-                            // Count unique classes
-                            if (!isset($coreClassIssues[$className])) {
+                            // Count unique classes (use a different approach)
+                            static $coreClassesSeen = [];
+                            if (!in_array($className, $coreClassesSeen)) {
+                                $coreClassesSeen[] = $className;
                                 $coreTotalClasses++;
                             }
                         }
@@ -459,8 +461,10 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                                 }
                             }
                             
-                            // Count unique classes
-                            if (!isset($integrationClassIssues[$className])) {
+                            // Count unique classes (use a different approach)
+                            static $integrationClassesSeen = [];
+                            if (!in_array($className, $integrationClassesSeen)) {
+                                $integrationClassesSeen[] = $className;
                                 $integrationTotalClasses++;
                             }
                         }
@@ -1036,17 +1040,17 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
         
         if (!empty($coreClassIssues)) {
             $comment .= "#### Core Classes\n";
-            $comment .= "| File | Line | Class | Complexity | Issue |\n";
-            $comment .= "|------|------|-------|------------|-------|\n";
+            $comment .= "| File | Line | Class | Complexity |\n";
+            $comment .= "|------|------|-------|------------|\n";
             
             $count = 0;
             foreach ($coreClassIssues as $issue) {
                 if ($count >= 10) { // Limit to first 10 for readability
                     $remaining = count($coreClassIssues) - 10;
-                    $comment .= "| ... | ... | ... | ... | *$remaining more classes* |\n";
+                    $comment .= "| ... | ... | ... | *$remaining more classes* |\n";
                     break;
                 }
-                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** | " . $issue['message'] . " |\n";
+                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** |\n";
                 $count++;
             }
             $comment .= "\n";
@@ -1054,20 +1058,47 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
         
         if (!empty($integrationClassIssues)) {
             $comment .= "#### Integration Classes\n";
-            $comment .= "| File | Line | Class | Complexity | Issue |\n";
-            $comment .= "|------|------|-------|------------|-------|\n";
+            $comment .= "| File | Line | Class | Complexity |\n";
+            $comment .= "|------|------|-------|------------|\n";
             
             $count = 0;
             foreach ($integrationClassIssues as $issue) {
                 if ($count >= 10) { // Limit to first 10 for readability
                     $remaining = count($integrationClassIssues) - 10;
-                    $comment .= "| ... | ... | ... | ... | *$remaining more classes* |\n";
+                    $comment .= "| ... | ... | ... | *$remaining more classes* |\n";
                     break;
                 }
-                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** | " . $issue['message'] . " |\n";
+                $comment .= "| `" . basename($issue['file']) . "` | " . $issue['line'] . " | `" . $issue['class'] . "` | **" . $issue['complexity'] . "** |\n";
                 $count++;
             }
             $comment .= "\n";
+        }
+        
+        // Add detailed class issues in a collapsible section
+        if (!empty($coreClassIssues) || !empty($integrationClassIssues)) {
+            $comment .= "<details>\n<summary>📋 View All Class Details</summary>\n\n";
+            
+            if (!empty($coreClassIssues)) {
+                $comment .= "**Core Classes:**\n\n";
+                $comment .= "```\n";
+                foreach ($coreClassIssues as $issue) {
+                    $comment .= basename($issue['file']) . ":" . $issue['line'] . " - " . $issue['class'] . " - Complexity: " . $issue['complexity'] . "\n";
+                    $comment .= "  " . $issue['message'] . "\n\n";
+                }
+                $comment .= "```\n\n";
+            }
+            
+            if (!empty($integrationClassIssues)) {
+                $comment .= "**Integration Classes:**\n\n";
+                $comment .= "```\n";
+                foreach ($integrationClassIssues as $issue) {
+                    $comment .= basename($issue['file']) . ":" . $issue['line'] . " - " . $issue['class'] . " - Complexity: " . $issue['complexity'] . "\n";
+                    $comment .= "  " . $issue['message'] . "\n\n";
+                }
+                $comment .= "```\n\n";
+            }
+            
+            $comment .= "</details>\n\n";
         }
     }
     
