@@ -76,13 +76,28 @@ $filesToAnalyze = [];
 if ($isPrMode) {
     // Get changed PHP files from git diff
     try {
-        $command = 'git diff --name-only origin/pre-release...';
+        // Try different git diff approaches for different environments
+        $commands = [
+            'git diff --name-only HEAD~1...HEAD',  // GitHub Actions
+            'git diff --name-only origin/pre-release...',  // Local development
+            'git diff --name-only HEAD~1...',  // Fallback
+        ];
+        
         $output = [];
         $returnVar = 0;
-        exec($command, $output, $returnVar);
+        
+        foreach ($commands as $command) {
+            exec($command, $output, $returnVar);
+            if ($returnVar === 0 && !empty($output)) {
+                echo "Using git command: $command\n";
+                break;
+            }
+            $output = []; // Reset for next attempt
+        }
 
-        if ($returnVar !== 0) {
-            throw new Exception("Failed to execute git diff command. Error code: $returnVar");
+        if ($returnVar !== 0 || empty($output)) {
+            echo "Warning: Could not get git diff, falling back to full analysis\n";
+            $filesToAnalyze = [];
         }
         
         // Filter PHP files and exclude tests, vendor, and node_modules
@@ -107,6 +122,12 @@ if ($isPrMode) {
         });
         
         echo "Found " . count($filesToAnalyze) . " changed PHP files to analyze.\n";
+        if (!empty($filesToAnalyze)) {
+            echo "Files to analyze:\n";
+            foreach ($filesToAnalyze as $file) {
+                echo "  - $file\n";
+            }
+        }
     } catch (Exception $e) {
         echo "Error: " . $e->getMessage() . "\n";
         echo "Falling back to analyzing all PHP files.\n";
@@ -133,6 +154,8 @@ if ($isPrMode && !empty($filesToAnalyze)) {
             $coreFiles[] = $file;
         }
     }
+    
+    // Note: We'll handle empty file lists in the PHPMD commands below
 } else {
     // For full analysis, we'll analyze core and integrations separately
     $coreFiles = ['.'];
@@ -145,25 +168,37 @@ $memoryLimit = $isLocal ? '2G' : '512M';
 
     // Run PHPMD analysis for Core
     echo "\n=== Running PHPMD Analysis - Core ===\n";
-    $corePhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
-                        implode(' ', array_map('escapeshellarg', $coreFiles)) .
-                        ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules,src/integrations';
+    if (empty($coreFiles)) {
+        echo "No core files to analyze.\n";
+        $corePhpmdOutput = [];
+        $corePhpmdReturnVar = 0;
+    } else {
+        $corePhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+                            implode(' ', array_map('escapeshellarg', $coreFiles)) .
+                            ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules,src/integrations';
 
-    echo "Command: $corePhpmdCommand\n";
-    $corePhpmdOutput = [];
-    $corePhpmdReturnVar = 0;
-    exec($corePhpmdCommand . ' 2>&1', $corePhpmdOutput, $corePhpmdReturnVar);
+        echo "Command: $corePhpmdCommand\n";
+        $corePhpmdOutput = [];
+        $corePhpmdReturnVar = 0;
+        exec($corePhpmdCommand . ' 2>&1', $corePhpmdOutput, $corePhpmdReturnVar);
+    }
 
     // Run PHPMD analysis for Integrations
     echo "\n=== Running PHPMD Analysis - Integrations ===\n";
-    $integrationPhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
-                              implode(' ', array_map('escapeshellarg', $integrationFiles)) .
-                              ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
+    if (empty($integrationFiles)) {
+        echo "No integration files to analyze.\n";
+        $integrationPhpmdOutput = [];
+        $integrationPhpmdReturnVar = 0;
+    } else {
+        $integrationPhpmdCommand = 'php -d memory_limit=' . $memoryLimit . ' ' . escapeshellarg($phpmdBin) . ' ' .
+                                  implode(' ', array_map('escapeshellarg', $integrationFiles)) .
+                                  ' xml cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules';
 
-    echo "Command: $integrationPhpmdCommand\n";
-    $integrationPhpmdOutput = [];
-    $integrationPhpmdReturnVar = 0;
-    exec($integrationPhpmdCommand . ' 2>&1', $integrationPhpmdOutput, $integrationPhpmdReturnVar);
+        echo "Command: $integrationPhpmdCommand\n";
+        $integrationPhpmdOutput = [];
+        $integrationPhpmdReturnVar = 0;
+        exec($integrationPhpmdCommand . ' 2>&1', $integrationPhpmdOutput, $integrationPhpmdReturnVar);
+    }
 
 // Run PHPCBF analysis for code duplication (commented out - only focusing on PHPMD)
 // echo "\n=== Running PHPCBF Analysis ===\n";
