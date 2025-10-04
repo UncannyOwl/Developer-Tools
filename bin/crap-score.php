@@ -185,6 +185,14 @@ $memoryLimit = $isLocal ? '2G' : '512M';
     }
     $coreXmlOutput = implode("\n", $coreXmlLines);
 
+    // Debug: Output Core XML for inspection
+    echo "\n=== Core PHPMD Raw Output (first 20 lines) ===\n";
+    foreach (array_slice($corePhpmdOutput, 0, 20) as $line) {
+        echo "$line\n";
+    }
+    echo "\n=== Core XML Output ===\n";
+    echo $coreXmlOutput . "\n";
+
     // Parse Integration results
     $integrationXmlLines = [];
     $inXml = false;
@@ -201,6 +209,14 @@ $memoryLimit = $isLocal ? '2G' : '512M';
     }
     $integrationXmlOutput = implode("\n", $integrationXmlLines);
 
+    // Debug: Output Integration XML for inspection
+    echo "\n=== Integration PHPMD Raw Output (first 20 lines) ===\n";
+    foreach (array_slice($integrationPhpmdOutput, 0, 20) as $line) {
+        echo "$line\n";
+    }
+    echo "\n=== Integration XML Output ===\n";
+    echo $integrationXmlOutput . "\n";
+
     // Parse Core XML if we have output
     if (!empty($coreXmlOutput) && strpos($coreXmlOutput, '<?xml') !== false) {
         try {
@@ -213,6 +229,9 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                     foreach ($file->violation as $violation) {
                         $lineNumber = (int)$violation['beginline'];
                         $message = (string)$violation;
+
+                        // Debug: Output all violations to see what we're getting
+                        echo "Core violation: $message\n";
 
                         // Extract cyclomatic complexity
                         if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
@@ -263,6 +282,9 @@ $memoryLimit = $isLocal ? '2G' : '512M';
                     foreach ($file->violation as $violation) {
                         $lineNumber = (int)$violation['beginline'];
                         $message = (string)$violation;
+
+                        // Debug: Output all violations to see what we're getting
+                        echo "Integration violation: $message\n";
 
                         // Extract cyclomatic complexity
                         if (preg_match('/cyclomatic complexity of (\d+)/', $message, $complexityMatches)) {
