@@ -593,10 +593,13 @@ if ($isVerboseMode) {
 
 // Generate GitHub comment if in PR mode
 if ($isPrMode) {
+    // Fetch baseline data for comparison
+    $baselineData = getBaselineCrapScores();
+    
     $comment = generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues, 
                                    $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
                                    $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
-                                   $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, []);
+                                   $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, [], $baselineData);
     
     // Save comment to file for GitHub Action to use
     file_put_contents($projectRootDir . '/crap-score-comment.md', $comment);
@@ -606,6 +609,128 @@ if ($isPrMode) {
     echo "---\n";
     echo $comment;
     echo "\n---\n";
+}
+
+/**
+ * Fetch baseline CRAP score data from pre-release branch
+ */
+function getBaselineCrapScores() {
+    global $projectRootDir;
+    
+    echo "Fetching baseline CRAP score data from pre-release branch...\n";
+    
+    // Try to get the baseline report from pre-release branch
+    $baselineReportPath = 'CRAP-SCORE-BASELINE-REPORT.md';
+    $baselineData = null;
+    
+    try {
+        // Check if the baseline report exists in pre-release branch
+        $checkOutput = [];
+        $checkReturnVar = 0;
+        exec("git show origin/pre-release:$baselineReportPath 2>&1", $checkOutput, $checkReturnVar);
+        
+        if ($checkReturnVar === 0 && !empty($checkOutput)) {
+            $baselineContent = implode("\n", $checkOutput);
+            
+            // Parse the baseline data from the markdown report
+            $baselineData = parseBaselineReport($baselineContent);
+            echo "Successfully loaded baseline data from pre-release branch\n";
+        } else {
+            echo "Baseline report not found in pre-release branch, skipping comparison\n";
+        }
+    } catch (Exception $e) {
+        echo "Error fetching baseline data: " . $e->getMessage() . "\n";
+    }
+    
+    return $baselineData;
+}
+
+/**
+ * Parse baseline report markdown to extract CRAP score data
+ */
+function parseBaselineReport($content) {
+    $data = [
+        'totalMethods' => 0,
+        'totalCrapScore' => 0,
+        'averageCrapScore' => 0,
+        'maxCrapScore' => 0,
+        'highCrapMethods' => 0,
+        'coreMethods' => 0,
+        'coreCrapScore' => 0,
+        'coreAverageCrapScore' => 0,
+        'coreMaxCrapScore' => 0,
+        'coreHighCrapMethods' => 0,
+        'integrationMethods' => 0,
+        'integrationCrapScore' => 0,
+        'integrationAverageCrapScore' => 0,
+        'integrationMaxCrapScore' => 0,
+        'integrationHighCrapMethods' => 0
+    ];
+    
+    // Extract data using regex patterns
+    if (preg_match('/\*\*Total Methods Analyzed:\*\* (\d+)/', $content, $matches)) {
+        $data['totalMethods'] = (int)$matches[1];
+    }
+    
+    if (preg_match('/\*\*TOTAL CRAP SCORE:\*\* ([\d,]+\.?\d*)/', $content, $matches)) {
+        $data['totalCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*Average CRAP Score:\*\* ([\d,]+\.?\d*)/', $content, $matches)) {
+        $data['averageCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*Maximum CRAP Score:\*\* ([\d,]+\.?\d*)/', $content, $matches)) {
+        $data['maxCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*High CRAP Methods \(>100\):\*\* (\d+)/', $content, $matches)) {
+        $data['highCrapMethods'] = (int)$matches[1];
+    }
+    
+    // Core data
+    if (preg_match('/\*\*Methods Analyzed:\*\* (\d+).*?Core Plugin/', $content, $matches)) {
+        $data['coreMethods'] = (int)$matches[1];
+    }
+    
+    if (preg_match('/\*\*Total CRAP Score:\*\* ([\d,]+\.?\d*).*?Core Plugin/', $content, $matches)) {
+        $data['coreCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*Average CRAP Score:\*\* ([\d,]+\.?\d*).*?Core Plugin/', $content, $matches)) {
+        $data['coreAverageCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*Maximum CRAP Score:\*\* ([\d,]+\.?\d*).*?Core Plugin/', $content, $matches)) {
+        $data['coreMaxCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*High CRAP Methods \(>100\):\*\* (\d+).*?Core Plugin/', $content, $matches)) {
+        $data['coreHighCrapMethods'] = (int)$matches[1];
+    }
+    
+    // Integration data
+    if (preg_match('/\*\*Methods Analyzed:\*\* (\d+).*?Integrations/', $content, $matches)) {
+        $data['integrationMethods'] = (int)$matches[1];
+    }
+    
+    if (preg_match('/\*\*Total CRAP Score:\*\* ([\d,]+\.?\d*).*?Integrations/', $content, $matches)) {
+        $data['integrationCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*Average CRAP Score:\*\* ([\d,]+\.?\d*).*?Integrations/', $content, $matches)) {
+        $data['integrationAverageCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*Maximum CRAP Score:\*\* ([\d,]+\.?\d*).*?Integrations/', $content, $matches)) {
+        $data['integrationMaxCrapScore'] = (float)str_replace(',', '', $matches[1]);
+    }
+    
+    if (preg_match('/\*\*High CRAP Methods \(>100\):\*\* (\d+).*?Integrations/', $content, $matches)) {
+        $data['integrationHighCrapMethods'] = (int)$matches[1];
+    }
+    
+    return $data;
 }
 
 /**
@@ -694,7 +819,7 @@ function getBaseBranchCrapScores($filesToAnalyze, $phpmdBin, $memoryLimit) {
 function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreComplexityIssues, $integrationComplexityIssues,
                               $coreAverageCrapScore, $coreMaxCrapScore, $coreTotalMethods, $coreHighCrapMethods, $coreTotalCrapScore,
                               $integrationAverageCrapScore, $integrationMaxCrapScore, $integrationTotalMethods, $integrationHighCrapMethods, $integrationTotalCrapScore,
-                              $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, $phpcpdOutput) {
+                              $averageCrapScore, $maxCrapScore, $totalMethods, $totalHighCrapMethods, $overallTotalCrapScore, $phpcpdOutput, $baselineData = null) {
     $comment = "## 🔍 CRAP Score Analysis\n\n";
     
     // Summary
@@ -793,6 +918,48 @@ function generateGitHubComment($coreCrapScores, $integrationCrapScores, $coreCom
     if ($coreHighCrapMethods == 0 && $integrationHighCrapMethods == 0) {
         $comment .= "- ✅ No high-risk methods detected\n";
         $comment .= "- Keep up the good work!\n";
+    }
+    
+    // Baseline comparison if available
+    if ($baselineData && $baselineData['totalMethods'] > 0) {
+        $comment .= "\n### 📈 Baseline Comparison (vs Pre-Release)\n";
+        $comment .= "Comparing current PR analysis with pre-release baseline:\n\n";
+        
+        // Overall comparison - PR impact vs baseline
+        $comment .= "#### Overall Impact\n";
+        $comment .= "- **Project Baseline CRAP:** " . number_format($baselineData['totalCrapScore'], 2) . " (entire project)\n";
+        $comment .= "- **PR CRAP Impact:** " . number_format($overallTotalCrapScore, 2) . " (this PR's contribution)\n";
+        
+        if ($overallTotalCrapScore > 0) {
+            $comment .= "- ⚠️ **This PR adds complexity** of " . number_format($overallTotalCrapScore, 2) . " CRAP points\n";
+            $comment .= "- **New Project Total:** " . number_format($baselineData['totalCrapScore'] + $overallTotalCrapScore, 2) . " CRAP points\n";
+        } elseif ($overallTotalCrapScore < 0) {
+            $comment .= "- ✅ **This PR reduces complexity** by " . number_format(abs($overallTotalCrapScore), 2) . " CRAP points\n";
+            $comment .= "- **New Project Total:** " . number_format($baselineData['totalCrapScore'] + $overallTotalCrapScore, 2) . " CRAP points\n";
+        } else {
+            $comment .= "- ➖ **This PR has no impact** on overall code complexity\n";
+            $comment .= "- **Project Total remains:** " . number_format($baselineData['totalCrapScore'], 2) . " CRAP points\n";
+        }
+        
+        // Core comparison
+        if ($coreTotalCrapScore > 0) {
+            $comment .= "\n#### Core Impact\n";
+            $comment .= "- **Core PR Impact:** " . number_format($coreTotalCrapScore, 2) . " CRAP points\n";
+            if ($coreTotalCrapScore > 0) {
+                $comment .= "- ⚠️ **Core complexity increased** by " . number_format($coreTotalCrapScore, 2) . " CRAP points\n";
+            }
+        }
+        
+        // Integration comparison
+        if ($integrationTotalCrapScore > 0) {
+            $comment .= "\n#### Integration Impact\n";
+            $comment .= "- **Integration PR Impact:** " . number_format($integrationTotalCrapScore, 2) . " CRAP points\n";
+            if ($integrationTotalCrapScore > 0) {
+                $comment .= "- ⚠️ **Integration complexity increased** by " . number_format($integrationTotalCrapScore, 2) . " CRAP points\n";
+            }
+        }
+        
+        $comment .= "\n*Note: This shows the CRAP score impact of this specific PR. The baseline represents the entire project's current state. A positive PR impact means this PR adds complexity, while zero means no change to project complexity.*\n";
     }
     
     return $comment;
