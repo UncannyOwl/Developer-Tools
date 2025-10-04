@@ -1,0 +1,92 @@
+name: CRAP Score Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  crap-score-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for PR analysis
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, pdo_sqlite, zip
+        coverage: none
+    
+    - name: Install Composer dependencies
+      run: |
+        composer install --optimize-autoloader
+    
+    - name: Run CRAP Score Analysis
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "Running CRAP score analysis for PR..."
+          composer crap-score -- --pr
+        else
+          echo "Running full CRAP score analysis..."
+          composer crap-score
+        fi
+    
+    - name: Upload CRAP Score Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: crap-score-results
+        path: |
+          crap-score-comment.md
+          crap-score-report.txt
+        retention-days: 30
+    
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Read the CRAP score comment
+          let comment = '';
+          try {
+            comment = fs.readFileSync('crap-score-comment.md', 'utf8');
+          } catch (error) {
+            comment = '## 🔍 CRAP Score Analysis\n\n❌ Failed to generate CRAP score analysis. Please check the workflow logs for details.';
+          }
+          
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const existingComment = comments.find(comment => 
+            comment.user.type === 'Bot' && 
+            comment.body.includes('🔍 CRAP Score Analysis')
+          );
+          
+          if (existingComment) {
+            // Update existing comment
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: comment
+            });
+          } else {
+            // Create new comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+          }
