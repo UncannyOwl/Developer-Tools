@@ -8813,12 +8813,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/UncannyOwl/Uncanny-Owl-Coding-Standards.git",
-                "reference": "e052995963632aad96d1411ef07dc2832f4da78e"
+                "reference": "65c7431c3b9bd8e3b3e2a4e0068c20be9f07ccfd"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/UncannyOwl/Uncanny-Owl-Coding-Standards/zipball/e052995963632aad96d1411ef07dc2832f4da78e",
-                "reference": "e052995963632aad96d1411ef07dc2832f4da78e",
+                "url": "https://api.github.com/repos/UncannyOwl/Uncanny-Owl-Coding-Standards/zipball/65c7431c3b9bd8e3b3e2a4e0068c20be9f07ccfd",
+                "reference": "65c7431c3b9bd8e3b3e2a4e0068c20be9f07ccfd",
                 "shasum": ""
             },
             "require": {
@@ -8885,7 +8885,7 @@
                 "issues": "https://github.com/UncannyOwl/UOCS/issues",
                 "source": "https://github.com/UncannyOwl/UOCS"
             },
-            "time": "2025-06-04T15:11:45+00:00"
+            "time": "2025-11-17T11:57:57+00:00"
         },
         {
             "name": "vlucas/phpdotenv",
