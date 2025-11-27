@@ -23,7 +23,8 @@
         "uocs/uncanny-owl-coding-standards": "dev-main",
         "phpmd/phpmd": "^2.15",
         "sebastian/phpcpd": "^6.0.0",
-        "phpunit/php-code-coverage": "^9.2"
+        "phpunit/php-code-coverage": "^9.2",
+        "behat/gherkin": "^4.9 <4.10"
     },
     "config": {
         "sort-packages": false,
