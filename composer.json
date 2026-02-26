@@ -24,6 +24,8 @@
         "phpmd/phpmd": "^2.15",
         "sebastian/phpcpd": "^6.0.0",
         "phpunit/php-code-coverage": "^9.2",
+        "phpunit/phpunit": "^9.6.34",
+        "composer/composer": "^2.9.3",
         "behat/gherkin": "^4.9 <4.10"
     },
     "config": {
