@@ -26,11 +26,11 @@ if ( empty( $options['plugin-path'] ) ) {
 	exit( 1 );
 }
 
-$plugin_path = rtrim( $options['plugin-path'], DIRECTORY_SEPARATOR );
-$pro_path    = isset( $options['pro-path'] ) ? rtrim( $options['pro-path'], DIRECTORY_SEPARATOR ) : null;
+$plugin_path = realpath( rtrim( $options['plugin-path'], DIRECTORY_SEPARATOR ) );
+$pro_path    = isset( $options['pro-path'] ) ? realpath( rtrim( $options['pro-path'], DIRECTORY_SEPARATOR ) ) : null;
 
-if ( ! is_dir( $plugin_path ) ) {
-	fwrite( STDERR, "ERROR: Plugin path does not exist: {$plugin_path}\n" );
+if ( false === $plugin_path || ! is_dir( $plugin_path ) ) {
+	fwrite( STDERR, "ERROR: Plugin path does not exist: {$options['plugin-path']}\n" );
 	exit( 1 );
 }
 
@@ -51,8 +51,8 @@ write_item_catalog( $result['item_catalog'], $plugin_path );
 if ( null !== $pro_path ) {
 	$pro_catalog_path = $plugin_path . '/src/core/includes/pro-items-catalog.php';
 
-	if ( ! is_dir( $pro_path ) ) {
-		fwrite( STDOUT, "Pro path not found: {$pro_path} — keeping existing pro-items-catalog.php\n" );
+	if ( false === $pro_path || ! is_dir( $pro_path ) ) {
+		fwrite( STDOUT, "Pro path not found: {$options['pro-path']} — keeping existing pro-items-catalog.php\n" );
 	} else {
 		$pro_integrations_map = $pro_path . '/vendor/composer/autoload_integrations_map.php';
 		if ( ! file_exists( $pro_integrations_map ) ) {
