@@ -386,6 +386,12 @@ function extract_integration_info( $file_path ) {
 	// Modern: $this->set_integration( 'CODE' )
 	if ( preg_match( '/set_integration\s*\(\s*[\'"]([^\'"]+)/', $source, $m ) ) {
 		$result['code'] = $m[1];
+	} elseif ( preg_match( '/set_integration\s*\(\s*(?:self|static)::\s*(\w+)/', $source, $m ) ) {
+		// Modern with constant: $this->set_integration( self::integration )
+		$const_name = $m[1];
+		if ( preg_match( '/const\s+' . preg_quote( $const_name, '/' ) . '\s*=\s*[\'"]([^\'"]+)/', $source, $cm ) ) {
+			$result['code'] = $cm[1];
+		}
 	} elseif ( preg_match( '/\$integration\s*=\s*[\'"]([^\'"]+)/', $source, $m ) ) {
 		// Legacy: public static $integration = 'CODE'
 		$result['code'] = $m[1];
@@ -394,6 +400,12 @@ function extract_integration_info( $file_path ) {
 	// Modern: $this->set_name( 'Display Name' )
 	if ( preg_match( '/set_name\s*\(\s*[\'"]([^\'"]+)/', $source, $m ) ) {
 		$result['name'] = $m[1];
+	} elseif ( preg_match( '/set_name\s*\(\s*(?:self|static)::\s*(\w+)/', $source, $m ) ) {
+		// Modern with constant: $this->set_name( self::NAME )
+		$const_name = $m[1];
+		if ( preg_match( '/const\s+' . preg_quote( $const_name, '/' ) . '\s*=\s*[\'"]([^\'"]+)/', $source, $cm ) ) {
+			$result['name'] = $cm[1];
+		}
 	} elseif ( preg_match( '/[\'"]name[\'"]\s*=>\s*[\'"]([^\'"]+)/', $source, $m ) ) {
 		// Legacy: 'name' => 'Display Name' (in register->integration call)
 		$result['name'] = $m[1];
