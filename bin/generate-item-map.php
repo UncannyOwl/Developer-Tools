@@ -675,28 +675,46 @@ function extract_catalog_metadata( $file_path, $target_type ) {
 	// Pattern: setter/key => optional_wrapper( 'sentence'
 	$i18n = 'esc_(?:html|attr)_(?:x|_)|esc_(?:html|attr)__|__|_x|_e';
 
+	// Each pattern has two variants: double-quoted (captures apostrophes safely) and single-quoted.
+	// Double-quoted patterns use "([^"\\]*)" — immune to apostrophes.
+	// Single-quoted patterns use '([^'\\]*)' — immune to double quotes.
+	// Both exclude backslash from the base class so escaped quotes (\' or \") are handled by \\. alternation.
+	// Double-quoted variant is listed first so it wins for strings containing apostrophes.
+	$dq = '"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"';   // captures content of "..." with escaped chars
+	$sq = '\'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\''; // captures content of '...' with escaped chars
+
 	$sentence_patterns = array(
-		// Modern: set_readable_sentence( wrapper( 'sentence' ...
-		'/set_readable_sentence\s*\(\s*(?:' . $i18n . ')\s*\(\s*[\'"]([^\'"]+)/s',
-		// Modern: set_readable_sentence( sprintf( wrapper( 'sentence' ...
-		'/set_readable_sentence\s*\(\s*sprintf\s*\(\s*(?:' . $i18n . ')\s*\(\s*[\'"]([^\'"]+)/s',
-		// Modern: set_readable_sentence( 'sentence' ) — no wrapper
-		'/set_readable_sentence\s*\(\s*[\'"]([^\'"]+)/',
-		// Modern: $readable_sentence = wrapper( 'sentence' ... then set_readable_sentence( $readable_sentence )
-		'/\$readable_sentence\s*=\s*(?:' . $i18n . ')\s*\(\s*[\'"]([^\'"]+)/',
-		// Modern alt: set_sentence_readable( wrapper( 'sentence' ...
-		'/set_sentence_readable\s*\(\s*(?:' . $i18n . ')\s*\(\s*[\'"]([^\'"]+)/s',
-		'/set_sentence_readable\s*\(\s*[\'"]([^\'"]+)/',
-		// Legacy: 'select_option_name' => wrapper( 'sentence' ...
-		'/[\'"]select_option_name[\'"]\s*=>\s*(?:' . $i18n . ')\s*\(\s*[\'"]([^\'"]+)/s',
-		// Legacy: 'select_option_name' => sprintf( wrapper( 'sentence' ...
-		'/[\'"]select_option_name[\'"]\s*=>\s*sprintf\s*\(\s*(?:' . $i18n . ')\s*\(\s*[\'"]([^\'"]+)/s',
-		'/[\'"]select_option_name[\'"]\s*=>\s*[\'"]([^\'"]+)/',
+		// Modern: set_readable_sentence( wrapper( "sentence" / 'sentence' ...
+		'/set_readable_sentence\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $dq . '/s',
+		'/set_readable_sentence\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $sq . '/s',
+		// Modern: set_readable_sentence( sprintf( wrapper( "sentence" / 'sentence' ...
+		'/set_readable_sentence\s*\(\s*sprintf\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $dq . '/s',
+		'/set_readable_sentence\s*\(\s*sprintf\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $sq . '/s',
+		// Modern: set_readable_sentence( "sentence" / 'sentence' ) — no wrapper
+		'/set_readable_sentence\s*\(\s*' . $dq . '/',
+		'/set_readable_sentence\s*\(\s*' . $sq . '/',
+		// Modern: $readable_sentence = wrapper( "sentence" / 'sentence' ...
+		'/\$readable_sentence\s*=\s*(?:' . $i18n . ')\s*\(\s*' . $dq . '/',
+		'/\$readable_sentence\s*=\s*(?:' . $i18n . ')\s*\(\s*' . $sq . '/',
+		// Modern alt: set_sentence_readable( wrapper( "sentence" / 'sentence' ...
+		'/set_sentence_readable\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $dq . '/s',
+		'/set_sentence_readable\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $sq . '/s',
+		'/set_sentence_readable\s*\(\s*' . $dq . '/',
+		'/set_sentence_readable\s*\(\s*' . $sq . '/',
+		// Legacy: 'select_option_name' => wrapper( "sentence" / 'sentence' ...
+		'/[\'"]select_option_name[\'"]\s*=>\s*(?:' . $i18n . ')\s*\(\s*' . $dq . '/s',
+		'/[\'"]select_option_name[\'"]\s*=>\s*(?:' . $i18n . ')\s*\(\s*' . $sq . '/s',
+		// Legacy: 'select_option_name' => sprintf( wrapper( "sentence" / 'sentence' ...
+		'/[\'"]select_option_name[\'"]\s*=>\s*sprintf\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $dq . '/s',
+		'/[\'"]select_option_name[\'"]\s*=>\s*sprintf\s*\(\s*(?:' . $i18n . ')\s*\(\s*' . $sq . '/s',
+		'/[\'"]select_option_name[\'"]\s*=>\s*' . $dq . '/',
+		'/[\'"]select_option_name[\'"]\s*=>\s*' . $sq . '/',
 	);
 
 	foreach ( $sentence_patterns as $pattern ) {
 		if ( preg_match( $pattern, $source_stripped, $m ) ) {
-			$result['readable_sentence'] = $m[1];
+			// Unescape PHP string escapes from source (e.g. \' → ' in single-quoted, \" → " in double-quoted).
+			$result['readable_sentence'] = stripslashes( $m[1] );
 			break;
 		}
 	}
@@ -1022,7 +1040,7 @@ function write_item_catalog( $item_catalog, $plugin_path ) {
 			$output .= "\t\t\t'integration'       => '" . addslashes( $entry['integration'] ) . "'," . PHP_EOL;
 			$output .= "\t\t\t'code'              => '" . addslashes( $entry['code'] ) . "'," . PHP_EOL;
 			$output .= "\t\t\t'meta'              => '" . addslashes( $entry['meta'] ) . "'," . PHP_EOL;
-			$output .= "\t\t\t'readable_sentence' => '" . addslashes( $entry['readable_sentence'] ) . "'," . PHP_EOL;
+			$output .= "\t\t\t'readable_sentence' => " . php_quote( $entry['readable_sentence'] ) . "," . PHP_EOL;
 			$output .= "\t\t\t'is_pro'            => " . ( $entry['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
 			$output .= "\t\t\t'requires_user'     => " . ( $entry['requires_user'] ? 'true' : 'false' ) . ',' . PHP_EOL;
 			$output .= "\t\t)," . PHP_EOL;
@@ -1064,6 +1082,24 @@ function write_item_catalog( $item_catalog, $plugin_path ) {
  * @param array  $free_integration_codes Array of integration codes present in Free.
  * @param string $output_path           Absolute path to write pro-items-list.php.
  */
+/**
+ * Wrap a string in PHP-safe quotes for code generation.
+ *
+ * Uses single quotes by default. Switches to double quotes if the string contains
+ * an apostrophe (single quote) — avoids broken translation strings like esc_html_x( '...it\'s...' ).
+ *
+ * @param string $str The raw string value.
+ *
+ * @return string  Quoted string safe for PHP output (e.g. 'foo' or "bar's").
+ */
+function php_quote( $str ) {
+	if ( false !== strpos( $str, "'" ) ) {
+		// Use double quotes — escape any $ or " inside.
+		return '"' . str_replace( array( '\\', '"', '$' ), array( '\\\\', '\\"', '\\$' ), $str ) . '"';
+	}
+	return "'" . $str . "'";
+}
+
 function write_pro_items_list( $pro_catalog, $addon_catalogs, $integration_names, $free_integration_codes, $output_path ) {
 
 	// Reorganize all items by integration code.
@@ -1147,7 +1183,7 @@ function write_pro_items_list( $pro_catalog, $addon_catalogs, $integration_names
 		$output .= "\t\t\t'triggers'   => array(" . PHP_EOL;
 		foreach ( $data['triggers'] as $item ) {
 			$output .= "\t\t\t\tarray(" . PHP_EOL;
-			$output .= "\t\t\t\t\t'name'     => esc_html_x( '" . addslashes( $item['name'] ) . "', 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
+			$output .= "\t\t\t\t\t'name'     => esc_html_x( " . php_quote( $item['name'] ) . ", 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
 			$output .= "\t\t\t\t\t'type'     => '" . $item['type'] . "'," . PHP_EOL;
 			$output .= "\t\t\t\t\t'is_pro'   => " . ( $item['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
 			$output .= "\t\t\t\t\t'is_elite' => " . ( $item['is_elite'] ? 'true' : 'false' ) . ',' . PHP_EOL;
@@ -1159,7 +1195,7 @@ function write_pro_items_list( $pro_catalog, $addon_catalogs, $integration_names
 		$output .= "\t\t\t'actions'    => array(" . PHP_EOL;
 		foreach ( $data['actions'] as $item ) {
 			$output .= "\t\t\t\tarray(" . PHP_EOL;
-			$output .= "\t\t\t\t\t'name'     => esc_html_x( '" . addslashes( $item['name'] ) . "', 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
+			$output .= "\t\t\t\t\t'name'     => esc_html_x( " . php_quote( $item['name'] ) . ", 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
 			$output .= "\t\t\t\t\t'is_pro'   => " . ( $item['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
 			$output .= "\t\t\t\t\t'is_elite' => " . ( $item['is_elite'] ? 'true' : 'false' ) . ',' . PHP_EOL;
 			$output .= "\t\t\t\t)," . PHP_EOL;
