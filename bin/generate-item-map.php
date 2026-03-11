@@ -8,8 +8,12 @@
  *
  * Outputs:
  *   1. {plugin-path}/vendor/composer/autoload_item_map.php   — lean runtime map (code, class, file)
- *   2. {plugin-path}/vendor/composer/autoload_item_catalog.php — rich catalog (meta, sentence, is_pro, etc.)
- *   3. (optional) {plugin-path}/src/core/includes/pro-items-list.php — Pro/addon items for Free UI dropdown
+ *   2. (optional) {plugin-path}/src/core/includes/pro-items-list.php — Pro/addon items for Free UI dropdown
+ *
+ * Note: write_item_catalog() exists but is not called during the build. It produces a rich
+ * catalog file (autoload_item_catalog.php) with metadata, sentences, is_pro, is_deprecated, etc.
+ * Currently too large (~66k tokens) for agentic AI consumption. Available for future use if
+ * a lighter format or filtered subset becomes viable.
  *
  * Usage:
  *   php bin/generate-item-map.php --plugin-path /path/to/uncanny-automator
@@ -66,8 +70,8 @@ if ( null === $result ) {
 // Write item map (lean).
 write_item_map( $result['item_map'], $plugin_path );
 
-// Write item catalog (rich).
-write_item_catalog( $result['item_catalog'], $plugin_path );
+// Rich catalog — not written to disk (too large for current consumers). Uncomment when needed.
+// write_item_catalog( $result['item_catalog'], $plugin_path );
 
 // Collect Free integration codes for pro_only determination.
 $free_integration_codes = get_integration_codes_from_map( $plugin_path );
@@ -86,9 +90,9 @@ if ( null !== $pro_path ) {
 			// Process Pro plugin items.
 			$pro_result = process_plugin( $pro_path, 'Pro' );
 			if ( null !== $pro_result ) {
-				// Write Pro's own item map + catalog into Pro's vendor directory.
+				// Write Pro's own item map into Pro's vendor directory.
 				write_item_map( $pro_result['item_map'], $pro_path );
-				write_item_catalog( $pro_result['item_catalog'], $pro_path );
+				// write_item_catalog( $pro_result['item_catalog'], $pro_path );
 
 				// Collect integration names from Pro + Free integration files.
 				$integration_names = get_integration_names_from_maps( $pro_path, $plugin_path );
