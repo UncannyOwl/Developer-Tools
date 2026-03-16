@@ -420,6 +420,9 @@ function extract_integration_info( $file_path ) {
 	} elseif ( preg_match( '/\$integration\s*=\s*[\'"]([^\'"]+)/', $source, $m ) ) {
 		// Legacy: public static $integration = 'CODE'
 		$result['code'] = $m[1];
+	} elseif ( preg_match( '/[\'"]integration[\'"]\s*=>\s*[\'"]([^\'"]+)/', $source, $m ) ) {
+		// Config array: 'integration' => 'CODE' (App_Integration pattern)
+		$result['code'] = $m[1];
 	}
 
 	// Modern: $this->set_name( 'Display Name' )
