@@ -1226,27 +1226,35 @@ function write_pro_items_list( $pro_catalog, $addon_catalogs, $integration_names
 		$output .= "\t\t\t'elite_only' => '" . $elite_only . "'," . PHP_EOL;
 
 		// Triggers.
-		$output .= "\t\t\t'triggers'   => array(" . PHP_EOL;
-		foreach ( $data['triggers'] as $item ) {
-			$output .= "\t\t\t\tarray(" . PHP_EOL;
-			$output .= "\t\t\t\t\t'name'     => esc_html_x( " . php_quote( $item['name'] ) . ", 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
-			$output .= "\t\t\t\t\t'type'     => '" . $item['type'] . "'," . PHP_EOL;
-			$output .= "\t\t\t\t\t'is_pro'   => " . ( $item['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
-			$output .= "\t\t\t\t\t'is_elite' => " . ( $item['is_elite'] ? 'true' : 'false' ) . ',' . PHP_EOL;
-			$output .= "\t\t\t\t)," . PHP_EOL;
+		if ( empty( $data['triggers'] ) ) {
+			$output .= "\t\t\t'triggers'   => array()," . PHP_EOL;
+		} else {
+			$output .= "\t\t\t'triggers'   => array(" . PHP_EOL;
+			foreach ( $data['triggers'] as $item ) {
+				$output .= "\t\t\t\tarray(" . PHP_EOL;
+				$output .= "\t\t\t\t\t'name'     => esc_html_x( " . php_quote( $item['name'] ) . ", 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
+				$output .= "\t\t\t\t\t'type'     => '" . $item['type'] . "'," . PHP_EOL;
+				$output .= "\t\t\t\t\t'is_pro'   => " . ( $item['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
+				$output .= "\t\t\t\t\t'is_elite' => " . ( $item['is_elite'] ? 'true' : 'false' ) . ',' . PHP_EOL;
+				$output .= "\t\t\t\t)," . PHP_EOL;
+			}
+			$output .= "\t\t\t)," . PHP_EOL;
 		}
-		$output .= "\t\t\t)," . PHP_EOL;
 
 		// Actions.
-		$output .= "\t\t\t'actions'    => array(" . PHP_EOL;
-		foreach ( $data['actions'] as $item ) {
-			$output .= "\t\t\t\tarray(" . PHP_EOL;
-			$output .= "\t\t\t\t\t'name'     => esc_html_x( " . php_quote( $item['name'] ) . ", 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
-			$output .= "\t\t\t\t\t'is_pro'   => " . ( $item['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
-			$output .= "\t\t\t\t\t'is_elite' => " . ( $item['is_elite'] ? 'true' : 'false' ) . ',' . PHP_EOL;
-			$output .= "\t\t\t\t)," . PHP_EOL;
+		if ( empty( $data['actions'] ) ) {
+			$output .= "\t\t\t'actions'    => array()," . PHP_EOL;
+		} else {
+			$output .= "\t\t\t'actions'    => array(" . PHP_EOL;
+			foreach ( $data['actions'] as $item ) {
+				$output .= "\t\t\t\tarray(" . PHP_EOL;
+				$output .= "\t\t\t\t\t'name'     => esc_html_x( " . php_quote( $item['name'] ) . ", 'Automator Pro item', 'uncanny-automator' )," . PHP_EOL;
+				$output .= "\t\t\t\t\t'is_pro'   => " . ( $item['is_pro'] ? 'true' : 'false' ) . ',' . PHP_EOL;
+				$output .= "\t\t\t\t\t'is_elite' => " . ( $item['is_elite'] ? 'true' : 'false' ) . ',' . PHP_EOL;
+				$output .= "\t\t\t\t)," . PHP_EOL;
+			}
+			$output .= "\t\t\t)," . PHP_EOL;
 		}
-		$output .= "\t\t\t)," . PHP_EOL;
 
 		$output .= "\t\t)," . PHP_EOL;
 	}
