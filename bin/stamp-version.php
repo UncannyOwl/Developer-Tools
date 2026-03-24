@@ -131,9 +131,9 @@ $const_version = $const_match[1];
 // ──────────────────────────────────────────────
 
 if ( $restore ) {
-	// Strip -<hash> suffix (7-12 hex chars after a dash).
-	$base_header = preg_replace( '/-[0-9a-f]{7,12}$/', '', $current_version );
-	$base_const  = preg_replace( '/-[0-9a-f]{7,12}$/', '', $const_version );
+	// Strip .99-<hash> suffix (bleeding-edge stamp).
+	$base_header = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $current_version );
+	$base_const  = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $const_version );
 
 	if ( $base_header === $current_version && $base_const === $const_version ) {
 		fwrite( STDOUT, "No hash suffix found — version is already clean: {$current_version}\n" );
@@ -192,10 +192,10 @@ if ( ! preg_match( '/^[0-9a-f]{7,9}$/', $hash ) ) {
 // Strip any existing hash suffix before appending
 // ──────────────────────────────────────────────
 
-$base_header = preg_replace( '/-[0-9a-f]{7,12}$/', '', $current_version );
-$base_const  = preg_replace( '/-[0-9a-f]{7,12}$/', '', $const_version );
+$base_header = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $current_version );
+$base_const  = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $const_version );
 
-$new_version = $base_header . '-' . $hash;
+$new_version = $base_header . '.99-' . $hash;
 
 // ──────────────────────────────────────────────
 // Apply the stamped version
