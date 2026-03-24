@@ -369,11 +369,23 @@ function get_integration_names_from_addon( $addon_path ) {
 		return array();
 	}
 
-	$map   = include $map_path;
-	$names = array();
+	$map              = include $map_path;
+	$names            = array();
+	$integrations_dir = $addon_path . '/src/integrations';
+
+	// Some addons use a single /src/integration/ dir instead of /src/integrations/.
+	if ( ! is_dir( $integrations_dir ) ) {
+		$integrations_dir = $addon_path . '/src/integration';
+	}
 
 	foreach ( $map as $slug => $data ) {
 		$main_file = isset( $data['main'] ) ? $data['main'] : '';
+
+		// Fallback to framework integration file when no legacy 'main' key.
+		if ( empty( $main_file ) || ! is_file( $main_file ) ) {
+			$main_file = find_integration_file( $integrations_dir, $slug );
+		}
+
 		if ( ! empty( $main_file ) && is_file( $main_file ) ) {
 			$info = extract_integration_info( $main_file );
 			if ( ! empty( $info['code'] ) && ! empty( $info['name'] ) ) {
@@ -460,11 +472,18 @@ function get_integration_codes_from_map( $plugin_path ) {
 		return array();
 	}
 
-	$map   = include $map_path;
-	$codes = array();
+	$map              = include $map_path;
+	$codes            = array();
+	$integrations_dir = $plugin_path . '/src/integrations';
 
 	foreach ( $map as $slug => $data ) {
 		$main_file = isset( $data['main'] ) ? $data['main'] : '';
+
+		// Fallback to framework integration file when no legacy 'main' key.
+		if ( empty( $main_file ) || ! is_file( $main_file ) ) {
+			$main_file = find_integration_file( $integrations_dir, $slug );
+		}
+
 		if ( ! empty( $main_file ) && is_file( $main_file ) ) {
 			$info = extract_integration_info( $main_file );
 			if ( ! empty( $info['code'] ) ) {
@@ -500,9 +519,17 @@ function get_integration_names_from_maps( $pro_path, $free_path ) {
 			continue;
 		}
 
-		$map = include $map_path;
+		$map             = include $map_path;
+		$integrations_dir = $path . '/src/integrations';
+
 		foreach ( $map as $slug => $data ) {
 			$main_file = isset( $data['main'] ) ? $data['main'] : '';
+
+			// Fallback to framework integration file when no legacy 'main' key.
+			if ( empty( $main_file ) || ! is_file( $main_file ) ) {
+				$main_file = find_integration_file( $integrations_dir, $slug );
+			}
+
 			if ( ! empty( $main_file ) && is_file( $main_file ) ) {
 				$info = extract_integration_info( $main_file );
 				if ( ! empty( $info['code'] ) && ! empty( $info['name'] ) ) {
@@ -514,6 +541,48 @@ function get_integration_names_from_maps( $pro_path, $free_path ) {
 	}
 
 	return $names;
+}
+
+/**
+ * Find the integration class file for a given slug within an integrations directory.
+ *
+ * Tries multiple naming conventions in order:
+ *   1. {slug}-integration.php        (standard modern framework)
+ *   2. class-{slug}-integration.php  (class-prefixed modern framework)
+ *   3. *-integration.php glob        (mismatched slug, e.g. sure-forms/sure-form-integration.php)
+ *
+ * @param string $integrations_dir Absolute path to the integrations directory.
+ * @param string $slug            Integration directory name (e.g. 'edd', 'gravity-forms').
+ *
+ * @return string Absolute path to the integration file, or empty string if not found.
+ */
+function find_integration_file( $integrations_dir, $slug ) {
+
+	$dir = $integrations_dir . '/' . $slug;
+
+	if ( ! is_dir( $dir ) ) {
+		return '';
+	}
+
+	// 1. Standard: {slug}-integration.php
+	$file = $dir . '/' . $slug . '-integration.php';
+	if ( is_file( $file ) ) {
+		return $file;
+	}
+
+	// 2. Class-prefixed: class-{slug}-integration.php
+	$file = $dir . '/class-' . $slug . '-integration.php';
+	if ( is_file( $file ) ) {
+		return $file;
+	}
+
+	// 3. Glob: any *-integration.php in the directory (catches slug mismatches).
+	$matches = glob( $dir . '/*-integration.php' );
+	if ( ! empty( $matches ) ) {
+		return $matches[0];
+	}
+
+	return '';
 }
 
 // ============================================================
