@@ -171,10 +171,10 @@ if ( $restore ) {
 // ──────────────────────────────────────────────
 
 if ( isset( $options['hash'] ) && '' !== trim( $options['hash'] ) ) {
-	$hash = substr( trim( $options['hash'] ), 0, 7 );
+	$hash = substr( trim( $options['hash'] ), 0, 9 );
 } else {
 	// Read from git in the plugin directory.
-	$hash = trim( shell_exec( "cd " . escapeshellarg( $plugin_path ) . " && git rev-parse --short=7 HEAD 2>/dev/null" ) );
+	$hash = trim( shell_exec( "cd " . escapeshellarg( $plugin_path ) . " && git rev-parse --short=9 HEAD 2>/dev/null" ) );
 
 	if ( empty( $hash ) ) {
 		fwrite( STDERR, "Error: Not a git repository or git is not available in: {$plugin_path}\n" );
@@ -183,7 +183,7 @@ if ( isset( $options['hash'] ) && '' !== trim( $options['hash'] ) ) {
 }
 
 // Validate hash is hex.
-if ( ! preg_match( '/^[0-9a-f]{7}$/', $hash ) ) {
+if ( ! preg_match( '/^[0-9a-f]{7,9}$/', $hash ) ) {
 	fwrite( STDERR, "Error: Invalid commit hash: {$hash}\n" );
 	exit( 1 );
 }
