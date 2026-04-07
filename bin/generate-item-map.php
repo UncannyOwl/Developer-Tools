@@ -8,7 +8,7 @@
  *
  * Outputs:
  *   1. {plugin-path}/vendor/composer/autoload_item_map.php   — lean runtime map (code, class, file)
- *   2. (optional) {plugin-path}/src/core/includes/pro-items-list.php — Pro/addon items for Free UI dropdown
+ *   2. (optional) {plugin-path}/vendor/composer/pro-items-list.php — Pro/addon items for Free UI dropdown
  *
  * Note: write_item_catalog() exists but is not called during the build. It produces a rich
  * catalog file (autoload_item_catalog.php) with metadata, sentences, is_pro, is_deprecated, etc.
@@ -78,7 +78,7 @@ $free_integration_codes = get_integration_codes_from_map( $plugin_path );
 
 // --- Process Pro plugin and addons → write pro-items-list.php ---
 if ( null !== $pro_path ) {
-	$pro_items_path = $plugin_path . '/src/core/includes/pro-items-list.php';
+	$pro_items_path = $plugin_path . '/vendor/composer/pro-items-list.php';
 
 	if ( false === $pro_path || ! is_dir( $pro_path ) ) {
 		fwrite( STDOUT, "Pro path not found: {$options['pro-path']} — keeping existing pro-items-list.php\n" );
