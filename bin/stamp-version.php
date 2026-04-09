@@ -131,9 +131,18 @@ $const_version = $const_match[1];
 // ──────────────────────────────────────────────
 
 if ( $restore ) {
-	// Strip .99-<hash> suffix (bleeding-edge stamp).
-	$base_header = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $current_version );
-	$base_const  = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $const_version );
+	// Strip bleeding-edge stamp.
+	// Current format: X.Y.Z.0.99-hash or X.Y.Z.W.0.99-hash
+	// Legacy format:  X.Y.Z.99-hash
+	$base_header = preg_replace( '/\.0\.99-[0-9a-f]{7,9}$/', '', $current_version );
+	if ( $base_header === $current_version ) {
+		$base_header = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $current_version );
+	}
+
+	$base_const = preg_replace( '/\.0\.99-[0-9a-f]{7,9}$/', '', $const_version );
+	if ( $base_const === $const_version ) {
+		$base_const = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $const_version );
+	}
 
 	if ( $base_header === $current_version && $base_const === $const_version ) {
 		fwrite( STDOUT, "No hash suffix found — version is already clean: {$current_version}\n" );
@@ -189,13 +198,19 @@ if ( ! preg_match( '/^[0-9a-f]{7,9}$/', $hash ) ) {
 }
 
 // ──────────────────────────────────────────────
-// Strip any existing hash suffix before appending
+// Strip any existing stamp before appending
 // ──────────────────────────────────────────────
 
-$base_header = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $current_version );
-$base_const  = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $const_version );
+// Current format: X.Y.Z.0.99-hash  Legacy: X.Y.Z.99-hash
+$base_header = preg_replace( '/\.0\.99-[0-9a-f]{7,9}$/', '', $current_version );
+if ( $base_header === $current_version ) {
+	$base_header = preg_replace( '/\.99-[0-9a-f]{7,12}$/', '', $current_version );
+}
 
-$new_version = $base_header . '.99-' . $hash;
+// Append .0.99-<hash> so any official release at the next sub-version always wins.
+// e.g. 7.2.0 → 7.2.0.0.99-abc1234d9  (7.2.0.1 > 7.2.0.0.99 ✓)
+//      7.2.0.1 → 7.2.0.1.0.99-abc1234d9  (7.2.0.2 > 7.2.0.1.0.99 ✓)
+$new_version = $base_header . '.0.99-' . $hash;
 
 // ──────────────────────────────────────────────
 // Apply the stamped version
