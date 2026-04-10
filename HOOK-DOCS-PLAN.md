@@ -136,11 +136,17 @@ undocumented: false
 
 **Verification:**
 
-- [ ] Finds ~850 unique hooks (actions AND filters)
-- [ ] Every `.md` has valid YAML frontmatter with `hook_id`
-- [ ] `index.php` totals match file count
-- [ ] `--dry-run` prints stats without writing
-- [ ] `--fail-on-undocumented` exits 1
+- [x] Finds ~850 unique hooks (actions AND filters) — **1,339 found** (315 actions, 1,024 filters)
+- [x] Every `.md` has valid YAML frontmatter with `hook_id`
+- [x] `index.php` totals match file count (1,338 files, 1,339 hooks)
+- [x] `--dry-run` prints stats without writing
+- [x] `--fail-on-undocumented` exits 1
+
+**Bugs fixed from prototype:**
+
+- Filter detection: `str_contains` on line text instead of broken submatch check (was missing all 1,024 filters)
+- File paths: relative to plugin root, not absolute
+- CLI: `getopt()` with `--plugin-path`/`--pro-path`/`--addon-path` (matches dev-tools convention)
 
 ---
 
@@ -328,7 +334,7 @@ For each .md file:
 | Phase | What | Status |
 |-------|------|--------|
 | **Phase 1** | WordPress site (CPT + theme + templates) | **COMPLETE** |
-| **Phase 2** | Scanner (`bin/scan-hooks.php`) | Not started |
+| **Phase 2** | Scanner (`bin/scan-hooks.php`) | **COMPLETE** |
 | **Phase 3** | AI Enricher (`bin/enrich-hooks.py`) | Not started |
 | **Phase 4** | WP Sync (`bin/sync-hooks.php`) | Not started |
 | **Phase 5** | Composer scripts + Buddy pipeline + cleanup | Not started |
