@@ -40,7 +40,10 @@
     "bin": [
         "bin/pr-code-check",
         "bin/pr-code-check.bat",
-        "bin/pr-code-check.php"
+        "bin/pr-code-check.php",
+        "bin/scan-hooks.php",
+        "bin/enrich-hooks.py",
+        "bin/sync-hooks.php"
     ],
     "scripts": {
         "unit-tests": "php ./vendor/bin/codecept run wpunit --skip-group Full_Coverage",

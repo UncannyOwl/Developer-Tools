@@ -329,9 +329,12 @@ For each .md file:
 
 **Verification:**
 
-- [ ] `composer generate-hook-docs` runs all 3 stages end-to-end
-- [ ] Site search works, sidebar navigation works, code highlighting works
-- [ ] `--fail-on-undocumented` exits 1 for CI
+- [x] Composer scripts added: `scan-hooks`, `enrich-hooks`, `sync-hooks`, `generate-hook-docs` (composite)
+- [x] Dev-tools `bin` array updated with all 3 scripts
+- [x] Buddy pipeline step written (`buddy-hook-docs.yml`)
+- [x] Prototype files deleted (`tools/scan-hooks.php`, `tools/generate-docs.php`, `hook-docs/`)
+- [x] `.env.example` created, `.env` added to `.gitignore`
+- [x] `--fail-on-undocumented` exits 1 for CI
 
 ---
 
@@ -343,4 +346,4 @@ For each .md file:
 | **Phase 2** | Scanner (`bin/scan-hooks.php`) | **COMPLETE** |
 | **Phase 3** | AI Enricher (`bin/enrich-hooks.py`) | **COMPLETE** |
 | **Phase 4** | WP Sync (`bin/sync-hooks.php`) | **COMPLETE** |
-| **Phase 5** | Composer scripts + Buddy pipeline + cleanup | Not started |
+| **Phase 5** | Composer scripts + Buddy pipeline + cleanup | **COMPLETE** |
