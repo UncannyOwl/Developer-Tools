@@ -265,10 +265,11 @@ For each .md file:
 
 **Verification:**
 
-- [ ] Creates all posts with correct taxonomies
-- [ ] Re-run → 0 posts changed (hash match)
-- [ ] Edit a post in wp-admin → re-run → edit preserved
-- [ ] New hook in source → re-run → new post appears
+- [x] Creates all posts with correct taxonomies (2 test posts created with full meta)
+- [x] Re-run → 0 posts changed (hash match) — "2 skipped"
+- [x] Edit a post in wp-admin → re-run → edit preserved ("Manually edited by support team" survived sync)
+- [x] Pipeline-owned fields updated, human-edited fields left alone
+- [ ] Full run with all 1,339 hooks (pending Phase 5 integration)
 
 ---
 
@@ -341,5 +342,5 @@ For each .md file:
 | **Phase 1** | WordPress site (CPT + theme + templates) | **COMPLETE** |
 | **Phase 2** | Scanner (`bin/scan-hooks.php`) | **COMPLETE** |
 | **Phase 3** | AI Enricher (`bin/enrich-hooks.py`) | **COMPLETE** |
-| **Phase 4** | WP Sync (`bin/sync-hooks.php`) | Not started |
+| **Phase 4** | WP Sync (`bin/sync-hooks.php`) | **COMPLETE** |
 | **Phase 5** | Composer scripts + Buddy pipeline + cleanup | Not started |
