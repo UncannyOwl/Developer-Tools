@@ -42,14 +42,17 @@ function main( array $argv ): int {
 		fwrite( STDERR, "Error: Plugin path not found or missing src/: {$args['plugin-path']}\n" );
 		return 1;
 	}
+	// Primary plugin: relative prefix is '' (files become src/...).
 	$scan_paths[] = $plugin_path . '/src';
-	register_plugin_path( $plugin_path . '/src' );
+	$primary_slug = basename( $plugin_path );
+	register_plugin_slug( '', $primary_slug );
 
 	if ( ! empty( $args['pro-path'] ) ) {
 		$pro_path = realpath( rtrim( $args['pro-path'], DIRECTORY_SEPARATOR ) );
 		if ( false !== $pro_path && is_dir( $pro_path . '/src' ) ) {
 			$scan_paths[] = $pro_path . '/src';
-			register_plugin_path( $pro_path . '/src' );
+			$pro_slug     = basename( $pro_path );
+			register_plugin_slug( $pro_slug . '/', $pro_slug );
 		} else {
 			fwrite( STDERR, "Warning: Pro path not found, skipping: {$args['pro-path']}\n" );
 		}
@@ -63,7 +66,8 @@ function main( array $argv ): int {
 			$addon_real = realpath( rtrim( $addon_arg, DIRECTORY_SEPARATOR ) );
 			if ( false !== $addon_real && is_dir( $addon_real . '/src' ) ) {
 				$scan_paths[] = $addon_real . '/src';
-				register_plugin_path( $addon_real . '/src' );
+				$addon_slug   = basename( $addon_real );
+				register_plugin_slug( $addon_slug . '/', $addon_slug );
 			} else {
 				fwrite( STDERR, "Warning: Addon path not found, skipping: {$addon_arg}\n" );
 			}
@@ -190,36 +194,40 @@ function main( array $argv ): int {
 	}
 
 	// --- Phase 5: Write Markdown files — split by plugin repo ---
-	// Free hooks → {plugin-path}/hook-docs/docs/
-	// Pro hooks  → {pro-path}/hook-docs/docs/
-	$free_docs_dir = $plugin_path . '/hook-docs/docs';
-	$pro_docs_dir  = ! empty( $pro_path ) ? $pro_path . '/hook-docs/docs' : null;
+	// Build map: plugin_slug → plugin_root_path from scan_paths.
+	$slug_to_root = [];
+	$slug_to_root[ $primary_slug ] = $plugin_path;
+	if ( ! empty( $pro_path ) ) {
+		$slug_to_root[ basename( $pro_path ) ] = $pro_path;
+	}
+	if ( null !== $addon_raw ) {
+		$addon_list_final = is_array( $addon_raw ) ? $addon_raw : array( $addon_raw );
+		foreach ( $addon_list_final as $aa ) {
+			$ar = realpath( rtrim( $aa, DIRECTORY_SEPARATOR ) );
+			if ( false !== $ar ) {
+				$slug_to_root[ basename( $ar ) ] = $ar;
+			}
+		}
+	}
 
-	$free_index = [];
-	$pro_index  = [];
-	$free_count = 0;
-	$pro_count  = 0;
+	// Track per-plugin stats.
+	$per_plugin_index = [];
+	$per_plugin_count = [];
+	foreach ( $slug_to_root as $slug => $root ) {
+		$per_plugin_index[ $slug ] = [];
+		$per_plugin_count[ $slug ] = 0;
+	}
 
 	foreach ( $hooks_list as $hook ) {
-		$is_pro   = 'uncanny-automator-pro' === $hook['plugin'];
+		$slug     = $hook['plugin'];
 		$segment  = infer_segment( $hook['locations'][0]['file'] ?? '' );
 		$filename = hook_to_filename( $hook['name'] );
 
-		if ( $is_pro && null !== $pro_docs_dir ) {
-			$seg_dir = $pro_docs_dir . '/' . $segment;
-			$pro_index[ $segment . '/' . $filename ] = array(
-				'hook_id' => $hook['name'],
-				'type'    => $hook['type'],
-			);
-			$pro_count++;
-		} else {
-			$seg_dir = $free_docs_dir . '/' . $segment;
-			$free_index[ $segment . '/' . $filename ] = array(
-				'hook_id' => $hook['name'],
-				'type'    => $hook['type'],
-			);
-			$free_count++;
-		}
+		// Determine output directory — fall back to primary plugin if slug not in map.
+		$root = $slug_to_root[ $slug ] ?? $plugin_path;
+
+		$docs_dir = $root . '/hook-docs/docs';
+		$seg_dir  = $docs_dir . '/' . $segment;
 
 		if ( ! is_dir( $seg_dir ) ) {
 			mkdir( $seg_dir, 0755, true );
@@ -228,28 +236,32 @@ function main( array $argv ): int {
 		$md_path = $seg_dir . '/' . $filename;
 		$md      = generate_hook_markdown( $hook );
 		file_put_contents( $md_path, $md );
+
+		if ( isset( $per_plugin_index[ $slug ] ) ) {
+			$per_plugin_index[ $slug ][ $segment . '/' . $filename ] = array(
+				'hook_id' => $hook['name'],
+				'type'    => $hook['type'],
+			);
+			$per_plugin_count[ $slug ]++;
+		}
 	}
 
-	// Write index.php for free plugin.
-	write_index_file( $plugin_path . '/hook-docs/index.php', $free_index, $hooks_list, 'uncanny-automator' );
-
-	// Write index.php for pro plugin.
-	if ( null !== $pro_docs_dir ) {
-		write_index_file( $pro_path . '/hook-docs/index.php', $pro_index, $hooks_list, 'uncanny-automator-pro' );
+	// Write index.php per plugin.
+	foreach ( $slug_to_root as $slug => $root ) {
+		write_index_file(
+			$root . '/hook-docs/index.php',
+			$per_plugin_index[ $slug ] ?? [],
+			$hooks_list,
+			$slug
+		);
 	}
 
-	fwrite( STDERR, sprintf(
-		"\nWrote %d free hooks to %s\n",
-		$free_count, $plugin_path . '/hook-docs/docs/'
-	) );
-
-	if ( null !== $pro_docs_dir ) {
-		fwrite( STDERR, sprintf(
-			"Wrote %d pro hooks to %s\n",
-			$pro_count, $pro_path . '/hook-docs/docs/'
-		) );
+	// Report.
+	fwrite( STDERR, "\n" );
+	foreach ( $per_plugin_count as $slug => $cnt ) {
+		$root = $slug_to_root[ $slug ] ?? '';
+		fwrite( STDERR, sprintf( "Wrote %d hooks to %s/hook-docs/docs/\n", $cnt, $root ) );
 	}
-
 	fwrite( STDERR, sprintf(
 		"Total: %d hooks (%d actions, %d filters, %d undocumented)\n",
 		$total, $action_count, $filter_count, $undocumented
@@ -1245,48 +1257,51 @@ function infer_integration( string $filepath ): string {
  */
 /**
  * Plugin slug map — populated at runtime from scan paths.
- * Maps absolute src/ path → plugin slug (derived from parent directory name).
+ * Maps the relative path prefix (from path_strip_map) → plugin slug.
+ * For the primary plugin, the prefix is '' (empty). For others it's 'plugin-name/'.
  *
  * @var array
  */
 $plugin_slug_map = [];
 
 /**
- * Register a scan path and its plugin slug.
+ * Register a plugin's relative prefix and slug.
  *
- * @param string $src_path Absolute path to the src/ directory.
+ * @param string $rel_prefix The relative path prefix (e.g., '' for primary, 'uncanny-automator-pro/' for pro).
+ * @param string $slug       The plugin slug.
  *
  * @return void
  */
-function register_plugin_path( string $src_path ): void {
+function register_plugin_slug( string $rel_prefix, string $slug ): void {
 	global $plugin_slug_map;
-	// Plugin slug = the directory name one level above src/.
-	$plugin_root = dirname( $src_path );
-	$slug        = basename( $plugin_root );
-	$plugin_slug_map[ $src_path ] = $slug;
+	$plugin_slug_map[ $rel_prefix ] = $slug;
 }
 
 /**
- * Infer source plugin from a file path.
+ * Infer source plugin from a relative file path.
  *
- * Uses the registered scan paths to determine which plugin a file belongs to.
+ * Matches against registered prefixes. Longer prefixes checked first
+ * to avoid 'uncanny-automator' matching 'uncanny-automator-pro/' paths.
  *
- * @param string $filepath Relative or absolute file path.
+ * @param string $filepath Relative file path.
  *
  * @return string Plugin slug.
  */
 function infer_plugin( string $filepath ): string {
 	global $plugin_slug_map;
 
-	foreach ( $plugin_slug_map as $src_path => $slug ) {
-		if ( str_contains( $filepath, $slug ) ) {
-			return $slug;
-		}
-	}
+	// Sort by prefix length descending — longest match wins.
+	$prefixes = array_keys( $plugin_slug_map );
+	usort( $prefixes, fn( $a, $b ) => strlen( $b ) - strlen( $a ) );
 
-	// Fallback: extract from path pattern.
-	if ( preg_match( '#/plugins/([^/]+)/#', $filepath, $m ) ) {
-		return $m[1];
+	foreach ( $prefixes as $prefix ) {
+		if ( '' === $prefix || str_starts_with( $filepath, $prefix ) ) {
+			// For empty prefix, only match if no other prefix matched.
+			if ( '' === $prefix ) {
+				return $plugin_slug_map[ $prefix ];
+			}
+			return $plugin_slug_map[ $prefix ];
+		}
 	}
 
 	return 'unknown';
