@@ -543,7 +543,8 @@ Environment:
     parser.add_argument(
         '--input',
         required=True,
-        help='Path to the docs directory containing .md files',
+        nargs='+',
+        help='Path(s) to docs directories containing .md files (space-separated)',
     )
     parser.add_argument(
         '--force',
@@ -570,10 +571,12 @@ Environment:
         rate_limit=args.rate_limit,
     )
 
-    enricher.enrich_all(
-        input_dir=args.input,
-        force=args.force,
-    )
+    for input_dir in args.input:
+        print(f"\n--- Processing: {input_dir} ---")
+        enricher.enrich_all(
+            input_dir=input_dir,
+            force=args.force,
+        )
 
 
 if __name__ == '__main__':

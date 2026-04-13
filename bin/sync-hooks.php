@@ -42,9 +42,18 @@ function sync_hooks_main( array $argv ): int {
 		return 0;
 	}
 
-	$input_dir = $options['input'] ?? null;
-	if ( null === $input_dir || ! is_dir( $input_dir ) ) {
-		fwrite( STDERR, "Error: --input directory not found: " . ( $input_dir ?? '(none)' ) . "\n" );
+	// Support multiple --input paths (comma-separated or repeated flag).
+	$input_raw = $options['input'] ?? null;
+	if ( null === $input_raw ) {
+		fwrite( STDERR, "Error: --input is required.\n" );
+		return 1;
+	}
+	$input_dirs = is_array( $input_raw ) ? $input_raw : explode( ',', $input_raw );
+	$input_dirs = array_map( 'trim', $input_dirs );
+	$input_dirs = array_filter( $input_dirs, 'is_dir' );
+
+	if ( empty( $input_dirs ) ) {
+		fwrite( STDERR, "Error: No valid --input directories found.\n" );
 		return 1;
 	}
 
@@ -67,9 +76,14 @@ function sync_hooks_main( array $argv ): int {
 
 	fwrite( STDERR, "Scanning for hook files…\n" );
 
-	// Collect all .md files.
-	$files = glob_recursive( $input_dir, '*.md' );
-	fwrite( STDERR, sprintf( "  Found %d .md files\n", count( $files ) ) );
+	// Collect all .md files from all input directories.
+	$files = [];
+	foreach ( $input_dirs as $dir ) {
+		$dir_files = glob_recursive( $dir, '*.md' );
+		fwrite( STDERR, sprintf( "  %s — %d files\n", $dir, count( $dir_files ) ) );
+		$files = array_merge( $files, $dir_files );
+	}
+	fwrite( STDERR, sprintf( "  Total: %d .md files\n", count( $files ) ) );
 
 	$stats = array(
 		'created'   => 0,
