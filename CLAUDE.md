@@ -19,6 +19,8 @@ This is a **standalone development tools plugin** that provides:
 
 The plugin operates on **other Uncanny Owl plugins** in the same WordPress installation, not on itself.
 
+- **Hook Documentation Toolchain**: Automated pipeline to extract, AI-enrich, and publish hook docs. See [`docs/hook-docs-toolchain.md`](docs/hook-docs-toolchain.md) for complete usage guide.
+
 ## Essential Commands
 
 ### Code Quality & Standards
@@ -77,13 +79,21 @@ bin/pr-code-check.bat      # Windows
 
 ### Project Structure
 ```
-automator-dev-tools/          # This plugin
-├── bin/                      # Cross-platform executable scripts
-│   ├── pr-code-check.php    # Main PR code checking tool
-│   ├── crap-score.php       # CRAP analysis tool
-│   └── platform-detect.php # OS detection utility
-├── build/                    # Testing and build artifacts
-└── vendor/                   # Composer dependencies
+automator-dev-tools/
+├── bin/
+│   ├── pr-code-check.php       # PR code quality checker
+│   ├── crap-score.php          # CRAP complexity analysis
+│   ├── generate-item-map.php   # Integration item catalog builder
+│   ├── generate-load-files.php # Integration loader generator
+│   ├── stamp-version.php       # Bleeding-edge version stamper
+│   ├── scan-hooks.php          # Hook documentation scanner (ripgrep + PHP)
+│   ├── enrich-hooks.py         # Hook documentation AI enricher (Python)
+│   └── sync-hooks.php          # Hook documentation WordPress sync
+├── docs/
+│   └── hook-docs-toolchain.md  # Full hook docs pipeline guide
+├── build/                      # Testing and build artifacts
+├── .env.example                # AI provider config template
+└── vendor/                     # Composer dependencies
 ```
 
 ### Code Quality Standards
@@ -109,6 +119,32 @@ This plugin is designed to work **within** the Uncanny Automator WordPress ecosy
 - **Working Directory**: Plugin root, NOT this dev-tools directory
 - **Target Files**: Other Uncanny Owl plugins in the same installation
 - **Configuration**: Project root contains vendor dependencies and coding standards
+
+### Hook Documentation
+```bash
+# Scan hooks from a plugin (outputs to {plugin}/hook-docs/docs/)
+php bin/scan-hooks.php --plugin-path /path/to/plugin
+
+# Scan free + pro (each repo gets its own hook-docs/)
+php bin/scan-hooks.php --plugin-path /path/to/free --pro-path /path/to/pro
+
+# Dry run — stats only, no files written
+php bin/scan-hooks.php --plugin-path /path/to/plugin --dry-run
+
+# AI enrich (fill {{PLACEHOLDERS}} in .md files)
+python3 bin/enrich-hooks.py --input /path/to/hook-docs/docs
+
+# Enrich multiple plugin paths
+python3 bin/enrich-hooks.py --input hook-docs/docs ../pro/hook-docs/docs
+
+# Sync to WordPress docs site
+php bin/sync-hooks.php --input hook-docs/docs --wp-path /path/to/wordpress
+
+# Full pipeline via composer (from consuming plugin)
+composer generate-hook-docs
+```
+
+See [`docs/hook-docs-toolchain.md`](docs/hook-docs-toolchain.md) for complete documentation.
 
 ## Important Development Notes
 
