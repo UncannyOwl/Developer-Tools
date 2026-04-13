@@ -461,6 +461,8 @@ Output only the description text."""
 
     def enrich_all(self, input_dir: str, force: bool = False):
         """Enrich all markdown files in the input directory."""
+        self.processed_count = 0
+        self.failed_items = []
         docs_path = Path(input_dir)
         if not docs_path.is_dir():
             print(f"Error: Input directory not found: {input_dir}")

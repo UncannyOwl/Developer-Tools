@@ -165,6 +165,25 @@ function main( array $argv ): int {
 	$undocumented     = count( array_filter( $hooks_list, fn( $h ) => $h['undocumented'] ) );
 	$dynamic_count    = count( array_filter( $hooks_list, fn( $h ) => $h['dynamic'] ) );
 
+	// --- Optional @since filter ---
+	$since_filter = $args['since'] ?? null;
+	if ( null !== $since_filter ) {
+		$hooks_list = array_values( array_filter( $hooks_list, function ( $h ) use ( $since_filter ) {
+			$hook_since = $h['since'] ?? '';
+			if ( '' === $hook_since ) {
+				return false; // Skip hooks without @since.
+			}
+			return version_compare( $hook_since, $since_filter, '>=' );
+		} ) );
+		// Recalculate stats after filtering.
+		$total         = count( $hooks_list );
+		$action_count  = count( array_filter( $hooks_list, fn( $h ) => 'action' === $h['type'] ) );
+		$filter_count  = count( array_filter( $hooks_list, fn( $h ) => 'filter' === $h['type'] ) );
+		$undocumented  = count( array_filter( $hooks_list, fn( $h ) => $h['undocumented'] ) );
+		$dynamic_count = count( array_filter( $hooks_list, fn( $h ) => $h['dynamic'] ) );
+		fwrite( STDERR, sprintf( "Filtered to %d hooks with @since >= %s\n", $total, $since_filter ) );
+	}
+
 	// --- Dry run ---
 	if ( $dry_run ) {
 		fwrite( STDERR, "\n=== Dry Run ===\n" );
@@ -234,8 +253,26 @@ function main( array $argv ): int {
 		}
 
 		$md_path = $seg_dir . '/' . $filename;
-		$md      = generate_hook_markdown( $hook );
-		file_put_contents( $md_path, $md );
+
+		if ( file_exists( $md_path ) ) {
+			$existing = file_get_contents( $md_path );
+
+			// If the file still has REAL placeholders (all-uppercase like {{READABLE_DESCRIPTION}}),
+			// it hasn't been enriched — safe to overwrite.
+			// NOT {{dynamic}} which is a hook name placeholder (lowercase).
+			if ( preg_match( '/\{\{[A-Z][A-Z_]+\}\}/', $existing ) ) {
+				$md = generate_hook_markdown( $hook );
+				file_put_contents( $md_path, $md );
+			} else {
+				// File is enriched — merge structural data, preserve AI content.
+				$md = merge_enriched_markdown( $existing, $hook );
+				file_put_contents( $md_path, $md );
+			}
+		} else {
+			// New hook — write full template with placeholders.
+			$md = generate_hook_markdown( $hook );
+			file_put_contents( $md_path, $md );
+		}
 
 		if ( isset( $per_plugin_index[ $slug ] ) ) {
 			$per_plugin_index[ $slug ][ $segment . '/' . $filename ] = array(
@@ -293,6 +330,7 @@ function parse_cli_args(): array {
 		'context-lines:',
 		'dry-run',
 		'fail-on-undocumented',
+		'since:',
 		'help',
 	) );
 
@@ -306,6 +344,7 @@ function parse_cli_args(): array {
 		fwrite( STDOUT, "  --context-lines <n>       Lines of source context (default: 7)\n" );
 		fwrite( STDOUT, "  --dry-run                 Print stats without writing files\n" );
 		fwrite( STDOUT, "  --fail-on-undocumented    Exit code 1 if undocumented hooks exist\n" );
+		fwrite( STDOUT, "  --since <version>         Only include hooks with @since >= version\n" );
 		fwrite( STDOUT, "  --help                    Show this help\n" );
 		exit( 0 );
 	}
@@ -870,20 +909,92 @@ function merge_params( array $doc_params, array $call_params ): array {
 // ---------------------------------------------------------------------------
 
 /**
- * Extract N lines of source context around a hook call.
+ * Extract the full enclosing function/method body around a hook call.
+ *
+ * Walks backward from the hook line to find the function declaration, then
+ * forward to find the closing brace. Falls back to N lines above/below if
+ * no enclosing function is found or the function exceeds 80 lines.
  *
  * @param string $file      File path.
  * @param int    $line_num  1-based line number.
- * @param int    $context   Lines above and below.
+ * @param int    $context   Lines above and below (used for fallback).
  *
  * @return string The source context code.
  */
 function extract_source_context( string $file, int $line_num, int $context = 7 ): string {
-	$lines = get_file_lines( $file );
-	$start = max( 0, $line_num - 1 - $context );
-	$end   = min( count( $lines ) - 1, $line_num - 1 + $context );
+	$lines      = get_file_lines( $file );
+	$line_count = count( $lines );
+	$hook_index = $line_num - 1; // Convert to 0-based.
 
-	$snippet = array_slice( $lines, $start, $end - $start + 1 );
+	// --- Fallback closure: N lines above/below the hook call. ---
+	$fallback = static function () use ( $lines, $hook_index, $context, $line_count ): string {
+		$start   = max( 0, $hook_index - $context );
+		$end     = min( $line_count - 1, $hook_index + $context );
+		$snippet = array_slice( $lines, $start, $end - $start + 1 );
+
+		return implode( "\n", $snippet );
+	};
+
+	// --- Step 1: Walk backward to find the enclosing function declaration. ---
+	$func_index = null;
+	$depth      = 0;
+
+	for ( $i = $hook_index; 0 <= $i; $i-- ) {
+		$line = $lines[ $i ];
+
+		// Count braces on this line (skip braces inside strings).
+		$stripped = preg_replace( '/([\'"])(?:(?!\\1|\\\\).|\\\\.)*\\1/', '', $line );
+		$depth   += substr_count( $stripped, '}' );
+		$depth   -= substr_count( $stripped, '{' );
+
+		// A function/method declaration at the current nesting scope.
+		if ( 1 === preg_match( '/^\s*((?:public|protected|private|static|abstract|final)\s+)*function\s+\w+\s*\(/', $line ) && 0 >= $depth ) {
+			$func_index = $i;
+			break;
+		}
+	}
+
+	// No enclosing function found — fall back.
+	if ( null === $func_index ) {
+		return $fallback();
+	}
+
+	// --- Step 2: Walk forward from the declaration, tracking brace depth. ---
+	$brace_depth = 0;
+	$opened      = false;
+	$end_index   = null;
+
+	for ( $i = $func_index; $i < $line_count; $i++ ) {
+		$line     = $lines[ $i ];
+		$stripped = preg_replace( '/([\'"])(?:(?!\\1|\\\\).|\\\\.)*\\1/', '', $line );
+
+		$brace_depth += substr_count( $stripped, '{' );
+
+		if ( 0 < $brace_depth ) {
+			$opened = true;
+		}
+
+		$brace_depth -= substr_count( $stripped, '}' );
+
+		if ( true === $opened && 0 === $brace_depth ) {
+			$end_index = $i;
+			break;
+		}
+	}
+
+	// Safety: if we never closed, fall back.
+	if ( null === $end_index ) {
+		return $fallback();
+	}
+
+	// --- Step 3: Cap at 80 lines; fall back if exceeded. ---
+	$total_lines = $end_index - $func_index + 1;
+
+	if ( 80 < $total_lines ) {
+		return $fallback();
+	}
+
+	$snippet = array_slice( $lines, $func_index, $total_lines );
 
 	return implode( "\n", $snippet );
 }
@@ -1223,6 +1334,95 @@ function generate_hook_markdown( array $hook ): string {
 	}
 
 	return $md;
+}
+
+// ---------------------------------------------------------------------------
+// Merge enriched markdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge fresh structural data into an existing enriched markdown file.
+ *
+ * Preserves AI-generated content (descriptions, examples) while updating
+ * pipeline-owned structural sections (frontmatter, usage, parameters,
+ * source code, related hooks, internal usage).
+ *
+ * @param string $existing Existing enriched markdown content.
+ * @param array  $hook     Fresh hook data from the scanner.
+ *
+ * @return string Merged markdown content.
+ */
+function merge_enriched_markdown( string $existing, array $hook ): string {
+	// Generate a fresh template to extract structural sections from.
+	$fresh = generate_hook_markdown( $hook );
+
+	// --- Extract AI-generated content from the existing file ---
+
+	// Readable description: text between badges/Since line and first "---".
+	$readable = '';
+	if ( preg_match( '/\*\*Since:\*\*.*?\n\n(.*?)(?=\n---)/s', $existing, $m ) ) {
+		$readable = trim( $m[1] );
+	}
+
+	// Technical description: content under ## Description.
+	$technical = '';
+	if ( preg_match( '/## Description\n\n(.*?)(?=\n---)/s', $existing, $m ) ) {
+		$technical = trim( $m[1] );
+	}
+
+	// Examples: full content under ## Examples (includes all code blocks).
+	$examples = '';
+	if ( preg_match( '/## Examples\n\n(.*?)(?=\n---)/s', $existing, $m ) ) {
+		$examples = trim( $m[1] );
+	}
+
+	// Return value: content under ## Return Value (for filters).
+	$return_val = '';
+	if ( preg_match( '/## Return Value\n\n(.*?)(?=\n---)/s', $existing, $m ) ) {
+		$return_val = trim( $m[1] );
+	}
+
+	// --- Replace placeholders/sections in the fresh template with preserved content ---
+
+	// Replace readable description placeholder or section.
+	if ( '' !== $readable && ! preg_match( '/\{\{[A-Z][A-Z_]+\}\}/', $readable ) ) {
+		// The fresh template has the docblock description + {{READABLE_DESCRIPTION}}.
+		// Replace everything between Since line and first --- with the preserved content.
+		$fresh = preg_replace(
+			'/(\*\*Since:\*\*.*?\n\n).*?(?=\n---)/s',
+			'$1' . $readable,
+			$fresh
+		);
+	}
+
+	// Replace technical description.
+	if ( '' !== $technical && ! preg_match( '/\{\{[A-Z][A-Z_]+\}\}/', $technical ) ) {
+		$fresh = preg_replace(
+			'/(## Description\n\n).*?(?=\n---)/s',
+			'$1' . $technical,
+			$fresh
+		);
+	}
+
+	// Replace examples.
+	if ( '' !== $examples && ! preg_match( '/\{\{[A-Z][A-Z_]+\}\}/', $examples ) ) {
+		$fresh = preg_replace(
+			'/(## Examples\n\n).*?(?=\n---)/s',
+			'$1' . $examples,
+			$fresh
+		);
+	}
+
+	// Replace return value (filters only).
+	if ( '' !== $return_val && ! preg_match( '/\{\{[A-Z][A-Z_]+\}\}/', $return_val ) ) {
+		$fresh = preg_replace(
+			'/(## Return Value\n\n).*?(?=\n---)/s',
+			'$1' . $return_val,
+			$fresh
+		);
+	}
+
+	return $fresh;
 }
 
 // ---------------------------------------------------------------------------
