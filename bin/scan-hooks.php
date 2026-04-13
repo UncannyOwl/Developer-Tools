@@ -561,7 +561,15 @@ function parse_hook_name( string $call_text, string $hook_type ): array {
 	}
 
 	// Dynamic hook.
-	return array( resolve_dynamic_name( $first_arg ), true );
+	$resolved = resolve_dynamic_name( $first_arg );
+
+	// Skip hooks that are entirely dynamic with no static parts (e.g. just "{dynamic}").
+	// These are internal calls like do_action( $hook_name ) — not developer-facing.
+	if ( '{dynamic}' === $resolved || '' === str_replace( '{dynamic}', '', $resolved ) ) {
+		return array( null, false );
+	}
+
+	return array( $resolved, true );
 }
 
 /**
