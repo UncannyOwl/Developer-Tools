@@ -38,34 +38,66 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', __DIR__ . '/' );
 }
 
-// WordPress i18n stubs. A handful of legacy trigger files self-instantiate
+// WordPress function stubs. A handful of legacy trigger files self-instantiate
 // at file-load time (e.g. a trailing `new My_Trigger()` outside any class
-// or function body), which pulls `setup_trigger()` into the include path.
-// That method typically calls `esc_html_x()` / `__()` / `_x()` etc., which
-// don't exist in a CLI build context and would abort the include with a
-// fatal "Call to undefined function" error. We only need pass-through
-// behaviour for extraction — no translation is happening here — so global
-// stubs are sufficient. Namespaced calls like `Uncanny_Automator_Pro\esc_html_x()`
-// fall back to the global symbol per PHP's function resolution rules.
-$i18n_stubs = array(
-	'__',
-	'_e',
-	'_x',
-	'_n',
-	'_nx',
-	'esc_html',
-	'esc_html__',
-	'esc_html_e',
-	'esc_html_x',
-	'esc_attr',
-	'esc_attr__',
-	'esc_attr_e',
-	'esc_attr_x',
+// or function body), which pulls `setup_trigger()` into the include path
+// along with hook-registration side effects. Those methods call various
+// WP core functions (i18n, hook API, filter API) that aren't defined in a
+// CLI build context. Rather than reject such files, we stub the common
+// surface so the include succeeds; `definition()` then returns cleanly.
+//
+// Pass-through stubs are sufficient — no translation / hook-firing happens
+// during extraction. Namespaced calls fall back to these globals per PHP's
+// function resolution rules.
+$passthrough_stubs = array(
+	// i18n.
+	'__', '_e', '_x', '_n', '_nx',
+	'esc_html', 'esc_html__', 'esc_html_e', 'esc_html_x',
+	'esc_attr', 'esc_attr__', 'esc_attr_e', 'esc_attr_x',
 );
-foreach ( $i18n_stubs as $stub ) {
+foreach ( $passthrough_stubs as $stub ) {
 	if ( ! function_exists( $stub ) ) {
 		eval( "function {$stub}( \$text, ...\$rest ) { return \$text; }" ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
 	}
+}
+
+$noop_stubs = array(
+	// Hook API — registrations and dispatch. Return the value unchanged
+	// where a return is expected so chained calls don't blow up.
+	'add_filter'          => 'true',
+	'add_action'          => 'true',
+	'remove_filter'       => 'true',
+	'remove_action'       => 'true',
+	'remove_all_filters'  => 'true',
+	'remove_all_actions'  => 'true',
+	'has_filter'          => 'false',
+	'has_action'          => 'false',
+	'did_action'          => '0',
+	'doing_action'        => 'false',
+	'doing_filter'        => 'false',
+	'current_action'      => 'null',
+	'current_filter'      => 'null',
+);
+foreach ( $noop_stubs as $fn => $return_literal ) {
+	if ( ! function_exists( $fn ) ) {
+		eval( "function {$fn}( ...\$args ) { return {$return_literal}; }" ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+	}
+}
+
+// apply_filters returns the first arg; do_action returns null. Separate
+// from the return-literal table above because apply_filters needs to
+// echo its first argument.
+if ( ! function_exists( 'apply_filters' ) ) {
+	eval( 'function apply_filters( $tag, $value, ...$args ) { return $value; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+}
+if ( ! function_exists( 'apply_filters_deprecated' ) ) {
+	eval( 'function apply_filters_deprecated( $tag, $args, $version = "", $replacement = "" ) { return isset( $args[0] ) ? $args[0] : null; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+}
+if ( ! function_exists( 'do_action' ) ) {
+	eval( 'function do_action( ...$args ) {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+}
+if ( ! function_exists( 'do_action_deprecated' ) ) {
+	eval( 'function do_action_deprecated( ...$args ) {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
 }
 
 $options = getopt( '', array( 'plugin-path:', 'base-autoload:' ) );
