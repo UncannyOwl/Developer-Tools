@@ -92,8 +92,25 @@ $scan_dirs = array(
 	$plugin_path . '/src/integration',
 );
 
+// Incremental cache keyed by absolute file path. Each entry stores the file's
+// last-seen mtime plus the extraction result:
+//
+//   'entry' => array  → migrated trigger with a definition() metadata entry
+//   'entry' => false  → file contains no trigger with a non-null definition()
+//                       (don't re-include on subsequent runs unless mtime
+//                       changes)
+//
+// On each run we stat every trigger file ONCE (cheap). Files whose mtime
+// matches the cache skip the PHP include + reflection path entirely, so the
+// typical composer dump-autoload cycle during development re-extracts only
+// the handful of files that actually changed.
+$cache_file = $plugin_path . '/vendor/composer/.autoload_trigger_metadata_cache.php';
+$cache      = file_exists( $cache_file ) ? (array) ( include $cache_file ) : array();
+
 $trigger_metadata = array();
 $errors           = array();
+$new_cache        = array();
+$rebuild_stats    = array( 'cached' => 0, 'reloaded' => 0 );
 
 foreach ( $scan_dirs as $scan_dir ) {
 
@@ -127,6 +144,29 @@ foreach ( $scan_dirs as $scan_dir ) {
 				continue;
 			}
 
+			$mtime = @filemtime( $trigger_file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+			// Cache hit — reuse the prior extraction result.
+			if ( false !== $mtime && isset( $cache[ $trigger_file ]['mtime'] ) && $cache[ $trigger_file ]['mtime'] === $mtime ) {
+
+				$cached_entry = isset( $cache[ $trigger_file ]['entry'] ) ? $cache[ $trigger_file ]['entry'] : null;
+
+				// Preserve in the forward-cache so the next run sees it too.
+				$new_cache[ $trigger_file ] = array(
+					'mtime' => $mtime,
+					'entry' => $cached_entry,
+				);
+
+				if ( is_array( $cached_entry ) && isset( $cached_entry['code'] ) && ! isset( $trigger_metadata[ $cached_entry['code'] ] ) ) {
+					$trigger_metadata[ $cached_entry['code'] ] = $cached_entry;
+				}
+
+				++$rebuild_stats['cached'];
+				continue;
+			}
+
+			// Cache miss or stale — include and re-extract.
+			++$rebuild_stats['reloaded'];
 			$before = get_declared_classes();
 
 			try {
@@ -137,6 +177,7 @@ foreach ( $scan_dirs as $scan_dir ) {
 			}
 
 			$new_classes = array_diff( get_declared_classes(), $before );
+			$file_entry  = false;
 
 			foreach ( $new_classes as $fqcn ) {
 
@@ -161,12 +202,6 @@ foreach ( $scan_dirs as $scan_dir ) {
 					continue;
 				}
 
-				if ( isset( $trigger_metadata[ $definition->code ] ) ) {
-					// First-write wins. Free defines; Pro's extraction runs in
-					// Pro's own composer hook and writes to Pro's metadata file.
-					continue;
-				}
-
 				// Trigger_Definition::to_array() is a COMPLETE entry (class,
 				// code, integration, trigger_type, trigger_meta). The `class`
 				// field is populated automatically by
@@ -179,16 +214,37 @@ foreach ( $scan_dirs as $scan_dir ) {
 					$entry['class'] = $fqcn;
 				}
 
-				$trigger_metadata[ $definition->code ] = $entry;
+				$file_entry = $entry;
+
+				if ( ! isset( $trigger_metadata[ $entry['code'] ] ) ) {
+					// First-write wins. Free defines; Pro's extraction runs in
+					// Pro's own composer hook and writes to Pro's metadata file.
+					$trigger_metadata[ $entry['code'] ] = $entry;
+				}
+
+				// One trigger class per file by convention; stop at the first
+				// migrated one so the cache entry is deterministic.
+				break;
 			}
+
+			$new_cache[ $trigger_file ] = array(
+				'mtime' => false !== $mtime ? $mtime : 0,
+				'entry' => $file_entry,
+			);
 		}
 	}
 }
 
 write_metadata_file( $plugin_path, $trigger_metadata );
+write_cache_file( $cache_file, $new_cache );
 
 $count = count( $trigger_metadata );
-fwrite( STDOUT, "Generated autoload_trigger_metadata.php with {$count} lazy-loadable trigger(s)\n" );
+fwrite( STDOUT, sprintf(
+	"Generated autoload_trigger_metadata.php with %d lazy-loadable trigger(s) — %d cached, %d reloaded\n",
+	$count,
+	$rebuild_stats['cached'],
+	$rebuild_stats['reloaded']
+) );
 
 if ( ! empty( $errors ) ) {
 	fwrite( STDERR, "Warnings:\n" );
@@ -230,5 +286,27 @@ function write_metadata_file( $plugin_path, array $metadata ) {
 	if ( false === file_put_contents( $target, $content, LOCK_EX ) ) {
 		fwrite( STDERR, "Failed to write trigger metadata file: {$target}\n" );
 		exit( 1 );
+	}
+}
+
+/**
+ * Persist the per-file mtime cache alongside the metadata file so the next
+ * run can fast-skip unchanged triggers.
+ *
+ * @param string $cache_file Absolute path to the sidecar cache PHP file.
+ * @param array  $cache      file_path => [ mtime, entry ] shape.
+ *
+ * @return void
+ */
+function write_cache_file( $cache_file, array $cache ) {
+
+	$content  = '<?php' . PHP_EOL;
+	$content .= '// Auto-generated sidecar cache for generate-trigger-metadata.php.' . PHP_EOL;
+	$content .= '// Tracks per-file mtimes so unchanged triggers skip the include/extract pass.' . PHP_EOL;
+	$content .= 'return ' . var_export( $cache, true ) . ';' . PHP_EOL;
+
+	if ( false === @file_put_contents( $cache_file, $content, LOCK_EX ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		// Cache write failure isn't fatal — next run just rebuilds from scratch.
+		fwrite( STDERR, "Warning: could not write trigger metadata cache at {$cache_file}\n" );
 	}
 }

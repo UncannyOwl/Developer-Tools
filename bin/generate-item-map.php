@@ -220,6 +220,18 @@ function process_integrations_map( $integrations_map, $path, $label = 'Plugin' )
 	$matched_files = 0;
 	$unmatched     = array();
 
+	// Incremental cache — keyed by absolute file path. `extract_code_from_file()`
+	// + `extract_catalog_metadata()` are pure functions of file contents, so an
+	// mtime-keyed result cache is sound. Cached entries store mtime alongside
+	// both extraction outputs; a miss or stale mtime triggers a full re-extract
+	// and cache refresh. This turns the hot loop from tokenizer-bound to
+	// stat-bound on warm runs, cutting the dev-loop composer dump by an order
+	// of magnitude for unrelated changes.
+	$cache_file      = $path . '/vendor/composer/.autoload_item_map_cache.php';
+	$cache           = file_exists( $cache_file ) ? (array) ( include $cache_file ) : array();
+	$new_cache       = array();
+	$cache_stats     = array( 'cached' => 0, 'reparsed' => 0 );
+
 	foreach ( $integrations_map as $integration_slug => $data ) {
 		foreach ( $type_mapping as $source_type => $target_type ) {
 			if ( empty( $data[ $source_type ] ) || ! is_array( $data[ $source_type ] ) ) {
@@ -243,7 +255,24 @@ function process_integrations_map( $integrations_map, $path, $label = 'Plugin' )
 
 				++$total_files;
 
-				$extracted = extract_code_from_file( $file_path, $setters, $meta_setter );
+				$mtime = @filemtime( $file_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+				// Cache hit — replay both extraction results without re-parsing.
+				if ( false !== $mtime && isset( $cache[ $file_path ]['mtime'] ) && $cache[ $file_path ]['mtime'] === $mtime ) {
+					$extracted    = $cache[ $file_path ]['extracted'];
+					$catalog_meta = $cache[ $file_path ]['catalog_meta'];
+					++$cache_stats['cached'];
+				} else {
+					$extracted    = extract_code_from_file( $file_path, $setters, $meta_setter );
+					$catalog_meta = extract_catalog_metadata( $file_path, $target_type );
+					++$cache_stats['reparsed'];
+				}
+
+				$new_cache[ $file_path ] = array(
+					'mtime'        => false !== $mtime ? $mtime : 0,
+					'extracted'    => $extracted,
+					'catalog_meta' => $catalog_meta,
+				);
 
 				if ( null === $extracted ) {
 					$relative    = str_replace( $path, '', $file_path );
@@ -262,9 +291,6 @@ function process_integrations_map( $integrations_map, $path, $label = 'Plugin' )
 				$relative = str_replace( '\\', '/', $relative );
 
 				$composite_key = $integration_code . '_' . $extracted['code'];
-
-				// Extract catalog metadata first — needed for is_deprecated flag.
-				$catalog_meta = extract_catalog_metadata( $file_path, $target_type );
 
 				// Lean item map — runtime loading only. Indexed by integration code for O(1) lookups.
 				// Deprecated items are included — existing recipes still reference them.
@@ -290,16 +316,27 @@ function process_integrations_map( $integrations_map, $path, $label = 'Plugin' )
 		}
 	}
 
+	// Persist the per-file cache so the next run can skip unchanged files.
+	// Failure is non-fatal — missing cache just means the next run rebuilds
+	// from scratch.
+	@file_put_contents( // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		$cache_file,
+		"<?php\n// Auto-generated sidecar cache for generate-item-map.php.\n// Tracks per-file mtimes so unchanged sources skip tokenizer + regex passes.\nreturn " . var_export( $new_cache, true ) . ";\n",
+		LOCK_EX
+	);
+
 	// --- Validation ---
 	$unmatched_count   = count( $unmatched );
 	$unmatched_percent = $total_files > 0 ? ( $unmatched_count / $total_files ) * 100 : 0;
 
 	fwrite( STDOUT, sprintf(
-		"%s: %d/%d files matched (%.1f%% unmatched)\n",
+		"%s: %d/%d files matched (%.1f%% unmatched) — %d cached, %d reparsed\n",
 		$label,
 		$matched_files,
 		$total_files,
-		$unmatched_percent
+		$unmatched_percent,
+		$cache_stats['cached'],
+		$cache_stats['reparsed']
 	) );
 
 	if ( $unmatched_count > 0 ) {
@@ -699,6 +736,41 @@ function extract_code_from_file( $file_path, $setters, $meta_setters = array() )
 			continue;
 		}
 
+		// Lazy trigger `definition()` patterns — migrated triggers moved
+		// integration/code (and optionally trigger_meta) OUT of setup_trigger()
+		// and into a static `definition()` method that chains one of the
+		// factory calls below. The extractor must recognise these so the
+		// triggers still land in autoload_item_map.php; otherwise they are
+		// dropped from the manifest and the recipe editor / targeted loader
+		// never sees them.
+		//
+		//   self::new_definition( CODE, INTEGRATION )
+		//   Trigger_Definition::create( CODE, INTEGRATION )
+		//   Lazy_Trigger_Support::define( CODE, INTEGRATION )
+		if ( T_STRING === $token_type && in_array( $token_value, array( 'new_definition', 'create', 'define' ), true ) ) {
+			$pair = collect_two_function_arguments( $tokens, $i, $count, $constants, $properties );
+			if ( null !== $pair ) {
+				if ( empty( $item_code ) && '' !== $pair[0] ) {
+					$item_code = $pair[0];
+				}
+				if ( empty( $integration_code ) && '' !== $pair[1] ) {
+					$integration_code = $pair[1];
+				}
+			}
+			continue;
+		}
+
+		// Fluent meta setter on the Trigger_Definition value object —
+		// `->trigger_meta( META )`. Name is distinct from the eager
+		// `set_trigger_meta` setter so there's no ambiguity.
+		if ( T_STRING === $token_type && 'trigger_meta' === $token_value ) {
+			$value = collect_function_argument( $tokens, $i, $count, $constants, $properties );
+			if ( null !== $value && '' !== $value && empty( $item_meta ) ) {
+				$item_meta = $value;
+			}
+			continue;
+		}
+
 		// Collect $this->integration = 'CODE' (property assignment, not setter method).
 		if ( T_STRING === $token_type && 'integration' === $token_value ) {
 			$value = collect_assignment_value( $tokens, $i, $count, $constants, $properties );
@@ -996,6 +1068,65 @@ function collect_function_argument( $tokens, &$i, $count, $constants, $propertie
 	}
 
 	return collect_string_expression( $tokens, $j, $count, $constants, $properties );
+}
+
+/**
+ * Collect the first two arguments of a function call, e.g.
+ * `new_definition( 'CODE', 'INTEGRATION' )`. Returns a `[string, string]`
+ * tuple, or null when the call isn't shaped as a two-arg invocation.
+ *
+ * Reuses `collect_string_expression()` so constants, `self::` references,
+ * and string concatenation are resolved for each argument. Skips the
+ * comma separator between the two.
+ *
+ * @param array $tokens
+ * @param int   $i
+ * @param int   $count
+ * @param array $constants
+ * @param array $properties
+ *
+ * @return array|null
+ */
+function collect_two_function_arguments( $tokens, &$i, $count, $constants, $properties = array() ) {
+
+	$j = $i + 1;
+
+	// Advance to the opening paren.
+	for ( ; $j < $count; $j++ ) {
+		if ( is_array( $tokens[ $j ] ) && T_WHITESPACE === $tokens[ $j ][0] ) {
+			continue;
+		}
+		if ( '(' === $tokens[ $j ] ) {
+			++$j;
+			break;
+		}
+		return null;
+	}
+
+	// First argument.
+	$first = collect_string_expression( $tokens, $j, $count, $constants, $properties );
+
+	// Advance past the comma separator.
+	for ( ; $j < $count; $j++ ) {
+		if ( is_array( $tokens[ $j ] ) && T_WHITESPACE === $tokens[ $j ][0] ) {
+			continue;
+		}
+		if ( ',' === $tokens[ $j ] ) {
+			++$j;
+			break;
+		}
+		// Call had fewer than two arguments — bail.
+		return null;
+	}
+
+	// Second argument.
+	$second = collect_string_expression( $tokens, $j, $count, $constants, $properties );
+
+	if ( null === $first && null === $second ) {
+		return null;
+	}
+
+	return array( (string) $first, (string) $second );
 }
 
 /**
