@@ -167,18 +167,19 @@ foreach ( $scan_dirs as $scan_dir ) {
 					continue;
 				}
 
-				// The array key is the code for fast lookups, but also store
-				// it as a field: code is the authoritative unique identifier
-				// while trigger_meta can be shared across triggers in the
-				// same integration (e.g., WooCommerce's multiple triggers
-				// using WOOPRODUCT as their meta field).
-				$trigger_metadata[ $definition->code ] = array(
-					'code'         => $definition->code,
-					'class'        => $fqcn,
-					'integration'  => $definition->integration,
-					'trigger_type' => $definition->trigger_type,
-					'trigger_meta' => $definition->get_trigger_meta(),
-				);
+				// Trigger_Definition::to_array() is a COMPLETE entry (class,
+				// code, integration, trigger_type, trigger_meta). The `class`
+				// field is populated automatically by
+				// Abstract_Trigger::new_definition(). Fall back to the
+				// discovered FQCN when a definition was built via the raw
+				// Trigger_Definition::create() constructor without
+				// for_class().
+				$entry = $definition->to_array();
+				if ( empty( $entry['class'] ) ) {
+					$entry['class'] = $fqcn;
+				}
+
+				$trigger_metadata[ $definition->code ] = $entry;
 			}
 		}
 	}
