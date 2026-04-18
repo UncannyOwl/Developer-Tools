@@ -38,6 +38,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', __DIR__ . '/' );
 }
 
+// WordPress i18n stubs. A handful of legacy trigger files self-instantiate
+// at file-load time (e.g. a trailing `new My_Trigger()` outside any class
+// or function body), which pulls `setup_trigger()` into the include path.
+// That method typically calls `esc_html_x()` / `__()` / `_x()` etc., which
+// don't exist in a CLI build context and would abort the include with a
+// fatal "Call to undefined function" error. We only need pass-through
+// behaviour for extraction — no translation is happening here — so global
+// stubs are sufficient. Namespaced calls like `Uncanny_Automator_Pro\esc_html_x()`
+// fall back to the global symbol per PHP's function resolution rules.
+$i18n_stubs = array(
+	'__',
+	'_e',
+	'_x',
+	'_n',
+	'_nx',
+	'esc_html',
+	'esc_html__',
+	'esc_html_e',
+	'esc_html_x',
+	'esc_attr',
+	'esc_attr__',
+	'esc_attr_e',
+	'esc_attr_x',
+);
+foreach ( $i18n_stubs as $stub ) {
+	if ( ! function_exists( $stub ) ) {
+		eval( "function {$stub}( \$text, ...\$rest ) { return \$text; }" ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+	}
+}
+
 $options = getopt( '', array( 'plugin-path:', 'base-autoload:' ) );
 
 if ( empty( $options['plugin-path'] ) ) {
