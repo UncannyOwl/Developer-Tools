@@ -100,6 +100,35 @@ if ( ! function_exists( 'do_action_deprecated' ) ) {
 	eval( 'function do_action_deprecated( ...$args ) {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
 }
 
+// `Automator()` is the base plugin's accessor for its main service container
+// (defined in `uncanny-automator.php`, the entry file — NOT autoloaded). A
+// handful of trigger `setup_trigger()` methods read `Automator()->get_author_name()`
+// / `->get_author_support_link()` to populate UI strings. Those calls have no
+// effect on the metadata we extract (we only read `static definition()`), but
+// they fire during instantiation in the drift check pass and would fatal here
+// without the entry file loaded. The stub returns a chainable null-object so
+// `Automator()->anything()->anything` resolves to empty string.
+if ( ! function_exists( 'Automator' ) ) {
+	eval( 'function Automator() { // phpcs:ignore Squiz.PHP.Eval.Discouraged
+		static $stub = null;
+		if ( null === $stub ) {
+			$stub = new class {
+				public function __call( $method, $args ) { return ""; }
+				public function __get( $name ) { return $this; }
+			};
+		}
+		return $stub;
+	}' );
+}
+
+// `get_option()` is a WP core function. A small number of trigger helpers
+// read settings during `setup_trigger()` to gate whether the trigger
+// participates. Returning the `$default` keeps those gates closed, which is
+// the safer side: `definition()` is still read regardless of the gate.
+if ( ! function_exists( 'get_option' ) ) {
+	eval( 'function get_option( $option, $default = false ) { return $default; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+}
+
 $options = getopt( '', array( 'plugin-path:', 'base-autoload:' ) );
 
 if ( empty( $options['plugin-path'] ) ) {
