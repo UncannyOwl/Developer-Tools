@@ -297,6 +297,90 @@ foreach ( $scan_dirs as $scan_dir ) {
 	}
 }
 
+// Drift check — verify declared hooks match what the constructed instance
+// actually adds via $this->add_action() in setup_trigger().
+//
+// Single-hook only: a chained ->hook() in definition() declares N hooks,
+// but the constructed instance exposes only the LAST one through
+// get_action_hook() / get_action_priority() / get_action_args_count()
+// because each add_action() call overwrites those properties. For
+// multi-hook triggers we trust the declared hooks alone — drift can only
+// be caught at runtime.
+//
+// Construction can fail for legacy / partially-migrated triggers. We log
+// a warning to STDERR and skip the drift check for that class rather
+// than aborting the build — only an actual declared-vs-registered
+// mismatch is a hard failure.
+$drift_errors = array();
+
+foreach ( $trigger_metadata as $code => $entry ) {
+
+	if ( empty( $entry['hooks'] ) || 1 !== count( $entry['hooks'] ) ) {
+		// Empty hooks → postmeta path (nothing to verify).
+		// Multi-hook → instance getters only reflect the last add_action()
+		// call, so we can't reliably cross-check the full set.
+		continue;
+	}
+
+	$fqcn = isset( $entry['class'] ) ? $entry['class'] : '';
+
+	if ( '' === $fqcn || ! class_exists( $fqcn ) ) {
+		fwrite(
+			STDERR,
+			sprintf(
+				"[trigger-metadata] Skipping drift check for trigger %s (class %s not loadable)\n",
+				$code,
+				$fqcn
+			)
+		);
+		continue;
+	}
+
+	try {
+		$instance = new $fqcn();
+	} catch ( \Throwable $e ) {
+		fwrite(
+			STDERR,
+			sprintf(
+				"[trigger-metadata] Skipping drift check for %s (instantiation failed: %s)\n",
+				$fqcn,
+				$e->getMessage()
+			)
+		);
+		continue;
+	}
+
+	$declared = $entry['hooks'];
+	$actual   = array(
+		array(
+			(string) $instance->get_action_hook(),
+			(int) $instance->get_action_priority(),
+			(int) $instance->get_action_args_count(),
+		),
+	);
+
+	if ( $declared !== $actual ) {
+		$drift_errors[] = sprintf(
+			"Hook drift in %s:\n  declared (definition):  %s\n  registered (setup_trigger): %s\n",
+			$fqcn,
+			var_export( $declared, true ),
+			var_export( $actual, true )
+		);
+	}
+}
+
+if ( ! empty( $drift_errors ) ) {
+	fwrite( STDERR, "\n=== Trigger hook drift detected ===\n\n" );
+	foreach ( $drift_errors as $err ) {
+		fwrite( STDERR, $err . "\n" );
+	}
+	fwrite(
+		STDERR,
+		"Fix: either update definition()->hook() OR remove the matching \$this->add_action() in setup_trigger().\n"
+	);
+	exit( 1 );
+}
+
 write_metadata_file( $plugin_path, $trigger_metadata );
 write_cache_file( $cache_file, $new_cache );
 
