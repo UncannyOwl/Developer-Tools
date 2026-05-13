@@ -143,20 +143,27 @@ if ( false === $plugin_path || ! is_dir( $plugin_path ) ) {
 	exit( 1 );
 }
 
-// Optional base plugin autoloader. Must load FIRST so addon trigger files
-// whose `extends` clause references the base plugin's classes can resolve
-// them during the include pass below.
+// Legacy: an optional --base-autoload path was once required so addon trigger
+// files could resolve their `extends` parent. The script now ships its own
+// stub fallback for the four framework symbols any trigger file references at
+// class-load time (Trigger, Trigger_Definition, Log_Properties, Triggers), so
+// addons can extract their own metadata without dragging in Free. The flag is
+// still accepted (and used when valid) so existing CI configs keep working
+// and Free can use its real classes when generating its own metadata.
 if ( ! empty( $options['base-autoload'] ) ) {
 	$base_autoload = realpath( $options['base-autoload'] );
-	if ( false === $base_autoload || ! file_exists( $base_autoload ) ) {
-		fwrite( STDERR, "ERROR: --base-autoload file does not exist: {$options['base-autoload']}\n" );
-		exit( 1 );
+	if ( false !== $base_autoload && file_exists( $base_autoload ) ) {
+		require_once $base_autoload;
+	} else {
+		fwrite( STDOUT, "Notice: --base-autoload not found at {$options['base-autoload']} — falling back to built-in stubs.\n" );
 	}
-	require_once $base_autoload;
 }
 
-// Load the consuming plugin's autoloader so `Uncanny_Automator\Recipe\Trigger`
-// and concrete subclasses resolve correctly when we include trigger files.
+// Load the consuming plugin's autoloader so its own concrete trigger classes
+// resolve correctly when we include trigger files. The framework parent class
+// `Uncanny_Automator\Recipe\Trigger` is provided either by the plugin's own
+// autoload (Free), by --base-autoload (compat path), or by the stub autoloader
+// registered below (Pro and other addons that don't ship Free).
 $autoload_file = $plugin_path . '/vendor/autoload.php';
 if ( ! file_exists( $autoload_file ) ) {
 	fwrite( STDERR, "ERROR: Missing vendor/autoload.php at {$plugin_path}. Run composer install first.\n" );
@@ -164,10 +171,89 @@ if ( ! file_exists( $autoload_file ) ) {
 }
 require_once $autoload_file;
 
+// Stub autoloader — fires only when the plugin's own autoload chain cannot
+// resolve a framework class. Free's autoload finds the real classes first;
+// for Pro/addons whose autoload has no entry for Uncanny_Automator\Recipe\*
+// the stubs cover the minimum surface trigger files reference at
+// class-definition time (parent class + Trigger_Definition value object +
+// two traits used in-class). The stubs let `require_once $trigger_file` and
+// `$fqcn::definition()` succeed without coupling the extractor to Free.
+spl_autoload_register(
+	static function ( $class_or_trait ) {
+
+		switch ( $class_or_trait ) {
+
+			case 'Uncanny_Automator\\Recipe\\Trigger_Definition':
+				eval(
+					'namespace Uncanny_Automator\Recipe;
+					final class Trigger_Definition {
+						public $code;
+						public $integration;
+						public $class = "";
+						public $trigger_type = "user";
+						public $trigger_meta = "";
+						public $hooks = array();
+						private function __construct( $code, $integration ) {
+							$this->code        = $code;
+							$this->integration = $integration;
+						}
+						public static function create( $code, $integration ) {
+							return new self( $code, $integration );
+						}
+						public function trigger_type( $type ) { $this->trigger_type = $type; return $this; }
+						public function trigger_meta( $meta ) { $this->trigger_meta = $meta; return $this; }
+						public function for_class( $class ) { $this->class = $class; return $this; }
+						public function hook( $hook, $priority = 10, $accepted_args = 1 ) {
+							$this->hooks[] = array( (string) $hook, (int) $priority, (int) $accepted_args );
+							return $this;
+						}
+						public function get_trigger_meta() {
+							return "" === $this->trigger_meta ? $this->code : $this->trigger_meta;
+						}
+						public function to_array() {
+							return array(
+								"code"         => $this->code,
+								"class"        => $this->class,
+								"integration"  => $this->integration,
+								"trigger_type" => $this->trigger_type,
+								"trigger_meta" => $this->get_trigger_meta(),
+								"hooks"        => $this->hooks,
+							);
+						}
+					}'
+				); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+				return;
+
+			case 'Uncanny_Automator\\Recipe\\Trigger':
+				eval(
+					'namespace Uncanny_Automator\Recipe;
+					abstract class Trigger {
+						public function __construct( ...$dependencies ) {}
+						protected static function new_definition( $code, $integration ) {
+							return Trigger_Definition::create( $code, $integration )->for_class( static::class );
+						}
+						public static function definition() { return null; }
+						public function __call( $method, $args ) {}
+						public static function __callStatic( $method, $args ) {}
+					}'
+				); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+				return;
+
+			case 'Uncanny_Automator\\Recipe\\Log_Properties':
+				eval( 'namespace Uncanny_Automator\Recipe; trait Log_Properties {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+				return;
+
+			case 'Uncanny_Automator\\Recipe\\Triggers':
+				eval( 'namespace Uncanny_Automator\Recipe; trait Triggers {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+				return;
+		}
+	}
+);
+
 if ( ! class_exists( 'Uncanny_Automator\\Recipe\\Trigger' ) ) {
-	// Free plugin not present (e.g., extractor invoked in an addon whose
-	// dev env doesn't symlink the base plugin). Write an empty metadata file
-	// so runtime consumers see "no lazy triggers" and fall back to eager.
+	// Stub autoloader didn't fire (impossible unless spl_autoload_register
+	// itself failed). Write an empty metadata file so runtime consumers see
+	// "no lazy triggers" and fall back to eager construction.
 	write_metadata_file( $plugin_path, array() );
 	fwrite( STDOUT, "Uncanny_Automator\\Recipe\\Trigger not autoloadable — wrote empty metadata file.\n" );
 	exit( 0 );
@@ -340,9 +426,28 @@ foreach ( $scan_dirs as $scan_dir ) {
 // a warning to STDERR and skip the drift check for that class rather
 // than aborting the build — only an actual declared-vs-registered
 // mismatch is a hard failure.
+//
+// Skip drift entirely when running on stub framework classes — the stubs
+// don't implement apply_definition()'s automatic $this->add_action() loop,
+// so every trigger would falsely look "drifted". Drift is a Free-only
+// quality gate; addon builds run the check against their own real Free
+// install when one is wired in (via --base-autoload).
+$_recipe_trigger_ref = new \ReflectionClass( 'Uncanny_Automator\\Recipe\\Trigger' );
+$drift_check_enabled = $_recipe_trigger_ref->hasMethod( 'apply_definition' )
+	&& $_recipe_trigger_ref->hasMethod( 'get_action_hook' );
+unset( $_recipe_trigger_ref );
+
+if ( ! $drift_check_enabled ) {
+	fwrite( STDOUT, "Notice: stub framework detected — skipping hook drift check (addon-self-extract mode).\n" );
+}
+
 $drift_errors = array();
 
 foreach ( $trigger_metadata as $code => $entry ) {
+
+	if ( ! $drift_check_enabled ) {
+		break;
+	}
 
 	if ( empty( $entry['hooks'] ) || 1 !== count( $entry['hooks'] ) ) {
 		// Empty hooks → postmeta path (nothing to verify).
