@@ -143,19 +143,32 @@ if ( false === $plugin_path || ! is_dir( $plugin_path ) ) {
 	exit( 1 );
 }
 
-// Legacy: an optional --base-autoload path was once required so addon trigger
-// files could resolve their `extends` parent. The script now ships its own
-// stub fallback for the four framework symbols any trigger file references at
-// class-load time (Trigger, Trigger_Definition, Log_Properties, Triggers), so
-// addons can extract their own metadata without dragging in Free. The flag is
-// still accepted (and used when valid) so existing CI configs keep working
-// and Free can use its real classes when generating its own metadata.
+// Optional --base-autoload — when present, addon trigger files can resolve
+// their `extends \Uncanny_Automator\Recipe\Trigger` via Free's real classes,
+// and the drift check below runs against the real apply_definition() pipeline.
+// When the path is missing, the script ships its own stub fallback for the
+// four framework symbols a trigger file references at class-load time
+// (Trigger, Trigger_Definition, Log_Properties, Triggers) so metadata
+// extraction still produces a byte-identical autoload_trigger_metadata.php.
+//
+// Local-dev contract: addons depend on Free at runtime, so any developer
+// machine has Free at the path the caller specifies. A missing file there is
+// always a misconfiguration that should fail loudly. CI runners that build
+// addons in isolation (no sibling Free checkout) are the legitimate
+// stub-fallback case — detected via the `CI` env var (set by every major CI
+// system: GitHub Actions, GitLab, CircleCI, Jenkins, Travis, Bitbucket).
+$is_ci = (bool) getenv( 'CI' );
+
 if ( ! empty( $options['base-autoload'] ) ) {
 	$base_autoload = realpath( $options['base-autoload'] );
 	if ( false !== $base_autoload && file_exists( $base_autoload ) ) {
 		require_once $base_autoload;
+	} elseif ( $is_ci ) {
+		fwrite( STDOUT, "Notice: --base-autoload not found at {$options['base-autoload']} — CI detected, falling back to built-in stubs.\n" );
 	} else {
-		fwrite( STDOUT, "Notice: --base-autoload not found at {$options['base-autoload']} — falling back to built-in stubs.\n" );
+		fwrite( STDERR, "ERROR: --base-autoload file does not exist: {$options['base-autoload']}\n" );
+		fwrite( STDERR, "       Outside CI, addons require the base plugin to be checked out at this path so the drift check can run against real framework classes. Set CI=1 to bypass.\n" );
+		exit( 1 );
 	}
 }
 
