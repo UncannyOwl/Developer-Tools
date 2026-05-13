@@ -1,5 +1,6 @@
 {
     "name": "uncanny-owl/developer-tools",
+    "version": "7.3",
     "description": "Centralized development tools for Uncanny Owl plugins",
     "type": "library",
     "license": "GPL-3.0-or-later",
