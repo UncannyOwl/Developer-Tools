@@ -260,6 +260,29 @@ spl_autoload_register(
 				eval( 'namespace Uncanny_Automator\Recipe; trait Triggers {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
 				return;
 		}
+
+		// Cross-plugin integration trait fallback. Pro/addon trigger files
+		// commonly `use` Free-side helpers — e.g.
+		// `Uncanny_Automator\Integrations\The_Events_Calendar\Has_Dependency`
+		// — at class-definition time. In CI there is no sibling Free
+		// checkout, so the import would otherwise fatal during
+		// `require_once $trigger_file`.
+		//
+		// Static metadata extraction only needs the symbol to *exist*;
+		// trait method bodies are never reached from `definition()`. We
+		// emit an empty trait under the requested namespace, which lets
+		// `use \Uncanny_Automator\Integrations\…` succeed and the file
+		// finish parsing.
+		//
+		// Scoped to `Uncanny_Automator\Integrations\` so we never shadow a
+		// real Pro-side class the addon's own autoloader should resolve.
+		if ( 0 === strpos( $class_or_trait, 'Uncanny_Automator\\Integrations\\' ) ) {
+			$parts = explode( '\\', $class_or_trait );
+			$short = array_pop( $parts );
+			$ns    = implode( '\\', $parts );
+			eval( "namespace {$ns}; trait {$short} {}" ); // phpcs:ignore Squiz.PHP.Eval.Discouraged
+			return;
+		}
 	}
 );
 
