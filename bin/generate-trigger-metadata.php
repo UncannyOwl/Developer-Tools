@@ -206,6 +206,7 @@ spl_autoload_register(
 						public $trigger_type = "user";
 						public $trigger_meta = "";
 						public $hooks = array();
+						public $enqueue_gate = null;
 						private function __construct( $code, $integration ) {
 							$this->code        = $code;
 							$this->integration = $integration;
@@ -220,11 +221,19 @@ spl_autoload_register(
 							$this->hooks[] = array( (string) $hook, (int) $priority, (int) $accepted_args );
 							return $this;
 						}
+						public function enqueue_gate( $option, $any = array(), $arg_index = 2 ) {
+							$this->enqueue_gate = array(
+								"option"    => (string) $option,
+								"any"       => (array) $any,
+								"arg_index" => (int) $arg_index,
+							);
+							return $this;
+						}
 						public function get_trigger_meta() {
 							return "" === $this->trigger_meta ? $this->code : $this->trigger_meta;
 						}
 						public function to_array() {
-							return array(
+							$entry = array(
 								"code"         => $this->code,
 								"class"        => $this->class,
 								"integration"  => $this->integration,
@@ -232,6 +241,10 @@ spl_autoload_register(
 								"trigger_meta" => $this->get_trigger_meta(),
 								"hooks"        => $this->hooks,
 							);
+							if ( null !== $this->enqueue_gate ) {
+								$entry["enqueue_gate"] = $this->enqueue_gate;
+							}
+							return $entry;
 						}
 					}'
 				); // phpcs:ignore Squiz.PHP.Eval.Discouraged
