@@ -915,6 +915,10 @@ function extract_catalog_metadata( $file_path, $target_type ) {
 		$result['requires_user'] = 'true' === $m[1];
 	} elseif ( preg_match( '/set_trigger_type\s*\(\s*[\'"]anonymous[\'"]/', $source_stripped ) ) {
 		$result['requires_user'] = false;
+	} elseif ( preg_match( '/->\s*trigger_type\s*\(\s*[\'"]anonymous[\'"]/', $source_stripped ) ) {
+		// Fluent definition(): ->trigger_type( 'anonymous' ). The `->` prefix is required so
+		// this does not also match the imperative set_trigger_type() handled above.
+		$result['requires_user'] = false;
 	} elseif ( preg_match( '/[\'"]type[\'"]\s*=>\s*[\'"]anonymous[\'"]/', $source_stripped ) ) {
 		// Legacy: 'type' => 'anonymous'
 		$result['requires_user'] = false;
