@@ -227,10 +227,19 @@ function process_integrations_map( $integrations_map, $path, $label = 'Plugin' )
 	// and cache refresh. This turns the hot loop from tokenizer-bound to
 	// stat-bound on warm runs, cutting the dev-loop composer dump by an order
 	// of magnitude for unrelated changes.
-	$cache_file      = $path . '/vendor/composer/.autoload_item_map_cache.php';
-	$cache           = file_exists( $cache_file ) ? (array) ( include $cache_file ) : array();
-	$new_cache       = array();
-	$cache_stats     = array( 'cached' => 0, 'reparsed' => 0 );
+	// Cached values are outputs of the extraction functions in THIS file, so an edit to
+	// the parser must invalidate every entry. Source mtimes alone cannot see that, which
+	// would silently replay stale results after a parser change.
+	$parser_hash = hash_file( 'sha256', __FILE__ );
+	$cache_file  = $path . '/vendor/composer/.autoload_item_map_cache.php';
+	$cache_raw   = file_exists( $cache_file ) ? (array) ( include $cache_file ) : array();
+
+	$cache = ( isset( $cache_raw['parser'], $cache_raw['entries'] ) && $cache_raw['parser'] === $parser_hash )
+		? (array) $cache_raw['entries']
+		: array();
+
+	$new_cache   = array();
+	$cache_stats = array( 'cached' => 0, 'reparsed' => 0 );
 
 	foreach ( $integrations_map as $integration_slug => $data ) {
 		foreach ( $type_mapping as $source_type => $target_type ) {
@@ -321,7 +330,13 @@ function process_integrations_map( $integrations_map, $path, $label = 'Plugin' )
 	// from scratch.
 	@file_put_contents( // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 		$cache_file,
-		"<?php\n// Auto-generated sidecar cache for generate-item-map.php.\n// Tracks per-file mtimes so unchanged sources skip tokenizer + regex passes.\nreturn " . var_export( $new_cache, true ) . ";\n",
+		"<?php\n// Auto-generated sidecar cache for generate-item-map.php.\n// Tracks per-file mtimes so unchanged sources skip tokenizer + regex passes.\n// 'parser' is a hash of the generator; a mismatch discards every entry.\nreturn " . var_export(
+			array(
+				'parser'  => $parser_hash,
+				'entries' => $new_cache,
+			),
+			true
+		) . ";\n",
 		LOCK_EX
 	);
 
