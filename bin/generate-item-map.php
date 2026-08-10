@@ -908,12 +908,18 @@ function extract_catalog_metadata( $file_path, $target_type ) {
 	}
 
 	// --- requires_user ---
-	// Modern: set_requires_user( true/false )
+	// For triggers this value becomes 'logged-in' vs 'anonymous', which the recipe
+	// builder compares against the recipe type. The only thing that decides that at
+	// runtime is $trigger_type (default 'user'), so infer it from nothing else --
+	// set_is_login_required() is a SEPARATE property and does not imply anonymity.
+	// Modern: set_requires_user( true/false ) -- actions only; triggers never call it.
 	if ( preg_match( '/set_requires_user\s*\(\s*(true|false)\s*\)/', $source_stripped, $m ) ) {
 		$result['requires_user'] = 'true' === $m[1];
-	} elseif ( preg_match( '/set_is_login_required\s*\(\s*(true|false)\s*\)/', $source_stripped, $m ) ) {
-		$result['requires_user'] = 'true' === $m[1];
 	} elseif ( preg_match( '/set_trigger_type\s*\(\s*[\'"]anonymous[\'"]/', $source_stripped ) ) {
+		$result['requires_user'] = false;
+	} elseif ( preg_match( '/->\s*trigger_type\s*\(\s*[\'"]anonymous[\'"]/', $source_stripped ) ) {
+		// Fluent definition(): ->trigger_type( 'anonymous' ). The `->` prefix is required so
+		// this does not also match the imperative set_trigger_type() handled above.
 		$result['requires_user'] = false;
 	} elseif ( preg_match( '/[\'"]type[\'"]\s*=>\s*[\'"]anonymous[\'"]/', $source_stripped ) ) {
 		// Legacy: 'type' => 'anonymous'
