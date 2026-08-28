@@ -60,15 +60,18 @@
         "phpmd": "./vendor/bin/phpmd . text cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules",
         "phpcpd": "./vendor/bin/phpcpd . --exclude vendor --exclude tests --exclude node_modules",
         "stamp-version": "@php bin/stamp-version.php",
+        "stamp-since": "@php bin/stamp-since.php",
         "post-install-cmd": [
             "@php -r \"file_exists('bin/pr-code-check') && chmod(realpath('bin/pr-code-check'), 0755);\"",
             "@php -r \"file_exists('bin/pr-code-check.php') && chmod(realpath('bin/pr-code-check.php'), 0755);\"",
-            "@php -r \"file_exists('bin/stamp-version.php') && chmod(realpath('bin/stamp-version.php'), 0755);\""
+            "@php -r \"file_exists('bin/stamp-version.php') && chmod(realpath('bin/stamp-version.php'), 0755);\"",
+            "@php -r \"file_exists('bin/stamp-since.php') && chmod(realpath('bin/stamp-since.php'), 0755);\""
         ],
         "post-update-cmd": [
             "@php -r \"file_exists('bin/pr-code-check') && chmod(realpath('bin/pr-code-check'), 0755);\"",
             "@php -r \"file_exists('bin/pr-code-check.php') && chmod(realpath('bin/pr-code-check.php'), 0755);\"",
-            "@php -r \"file_exists('bin/stamp-version.php') && chmod(realpath('bin/stamp-version.php'), 0755);\""
+            "@php -r \"file_exists('bin/stamp-version.php') && chmod(realpath('bin/stamp-version.php'), 0755);\"",
+            "@php -r \"file_exists('bin/stamp-since.php') && chmod(realpath('bin/stamp-since.php'), 0755);\""
         ]
     },
     "minimum-stability": "dev",
