@@ -1,0 +1,2 @@
+<?php
+// Legacy hook router.
