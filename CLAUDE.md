@@ -62,6 +62,24 @@ composer unit-tests-full
 composer unit-tests:coverage
 ```
 
+### Integration lint
+```bash
+# Lint one integration (Free + Pro); P0/P1 fail, P2 and reports do not
+php bin/lint-integration.php --plugin-path /path/to/free --pro-path /path/to/pro --slug foo-bookings
+
+# Integrations changed since the merge base with origin/pre-release; existing ones gated on changed lines only
+php bin/lint-integration.php --plugin-path /path/to/free --pro-path /path/to/pro --changed --format=github
+
+# Apply the mechanical fixes (L-login, L-hookconst)
+php bin/lint-integration.php --plugin-path /path/to/free --slug foo-bookings --fix
+
+# From a consuming plugin: composer lint:integration foo-bookings
+
+# The lint's own tests
+composer test:lint
+```
+Every finding carries a rule id from `.claude/skills/integration-rules` in the Automator repo and a check id. Checks live in `bin/lint/checks.php`; add a fixture case under `tests/fixtures/lint/` and a test before adding a check.
+
 ### Cross-platform PR Tools
 ```bash
 # Check PR code quality (PHPCS)
@@ -86,11 +104,16 @@ automator-dev-tools/
 │   ├── generate-item-map.php   # Integration item catalog builder
 │   ├── generate-load-files.php # Integration loader generator
 │   ├── stamp-version.php       # Bleeding-edge version stamper
+│   ├── lint-integration.php    # Integration lint: house rules by id (R-…/L-…), Free + Pro
+│   ├── lint/                   # The lint's context, checks, fixes and reporters
 │   ├── scan-hooks.php          # Hook documentation scanner (ripgrep + PHP)
 │   ├── enrich-hooks.py         # Hook documentation AI enricher (Python)
 │   └── sync-hooks.php          # Hook documentation WordPress sync
 ├── docs/
 │   └── hook-docs-toolchain.md  # Full hook docs pipeline guide
+├── tests/
+│   ├── lint/                   # PHPUnit tests for the integration lint
+│   └── fixtures/lint/          # A clean and a dirty fixture integration (Free + Pro)
 ├── build/                      # Testing and build artifacts
 ├── .env.example                # AI provider config template
 └── vendor/                     # Composer dependencies
