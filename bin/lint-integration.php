@@ -181,17 +181,14 @@ function lint_is_new_integration( $repo, $base, $slug ) {
  *
  * @param Lint_Finding[] $findings
  * @param Lint_Context   $ctx
- * @param array          $ranges Free repo ranges from lint_changed_ranges().
+ * @param array          $ranges_by_repo Repo root => ranges from lint_changed_ranges(). A repo that is not a git checkout has none, so its findings never gate.
  *
  * @return Lint_Finding[]
  */
-function lint_mark_preexisting( array $findings, Lint_Context $ctx, array $ranges ) {
+function lint_mark_preexisting( array $findings, Lint_Context $ctx, array $ranges_by_repo ) {
 	foreach ( $findings as $f ) {
-		if ( $ctx->repo_of( $f->file ) !== $ctx->free_repo ) {
-			$f->preexisting = true; // Pro is not diffed in this run: report, never gate.
-			continue;
-		}
-		$hit = false;
+		$ranges = isset( $ranges_by_repo[ $ctx->repo_of( $f->file ) ] ) ? $ranges_by_repo[ $ctx->repo_of( $f->file ) ] : array();
+		$hit    = false;
 		foreach ( isset( $ranges[ $ctx->rel( $f->file ) ] ) ? $ranges[ $ctx->rel( $f->file ) ] : array() as $r ) {
 			// A line finding blocks when its line changed; a file-level finding only when the file is new.
 			if ( 0 === $f->line ? 0 === $r[0] : ( $f->line >= $r[0] && $f->line <= $r[1] ) ) {
@@ -220,10 +217,15 @@ $pro_repo = '' !== $opts['pro-path'] ? realpath( $opts['pro-path'] ) : false;
 $pro_repo = false === $pro_repo ? null : $pro_repo;
 
 $slugs = $opts['slugs'];
-$base  = null;
+$bases = array(); // repo root => merge base, for every repo that is a git checkout
 if ( null !== $opts['changed'] ) {
-	$base  = lint_merge_base( $free_repo, $opts['changed'] );
-	$slugs = array_merge( $slugs, lint_slugs_from_files( lint_changed_files( $free_repo, $base ) ) );
+	foreach ( array_filter( array( $free_repo, $pro_repo ) ) as $repo ) {
+		if ( empty( lint_git( $repo, 'rev-parse --is-inside-work-tree' ) ) ) {
+			continue;
+		}
+		$bases[ $repo ] = lint_merge_base( $repo, $opts['changed'] );
+		$slugs          = array_merge( $slugs, lint_slugs_from_files( lint_changed_files( $repo, $bases[ $repo ] ) ) );
+	}
 }
 if ( $opts['all'] ) {
 	foreach ( glob( $free_repo . '/src/integrations/*', GLOB_ONLYDIR ) as $d ) {
@@ -244,6 +246,10 @@ $reports = array();
 $exit    = 0;
 foreach ( $slugs as $slug ) {
 	if ( ! is_dir( $free_repo . '/src/integrations/' . $slug ) ) {
+		if ( null !== $opts['changed'] ) {
+			fwrite( STDERR, "$slug has no Free integration folder; Pro-only integrations are not linted yet\n" );
+			continue;
+		}
 		fwrite( STDERR, "no Free integration folder for $slug\n" );
 		$exit = 2;
 		continue;
@@ -268,8 +274,12 @@ foreach ( $slugs as $slug ) {
 			}
 		}
 	}
-	if ( null !== $base && 'all' !== $opts['gate'] && ! lint_is_new_integration( $free_repo, $base, $slug ) ) {
-		$findings = lint_mark_preexisting( $findings, $ctx, lint_changed_ranges( $free_repo, $base, $slug ) );
+	if ( isset( $bases[ $free_repo ] ) && 'all' !== $opts['gate'] && ! lint_is_new_integration( $free_repo, $bases[ $free_repo ], $slug ) ) {
+		$ranges = array();
+		foreach ( $bases as $repo => $repo_base ) {
+			$ranges[ $repo ] = lint_changed_ranges( $repo, $repo_base, $slug );
+		}
+		$findings = lint_mark_preexisting( $findings, $ctx, $ranges );
 	}
 	$findings  = lint_sort_findings( $findings );
 	$report    = lint_report_array( $ctx, $findings, $fixed );

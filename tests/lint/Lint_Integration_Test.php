@@ -329,6 +329,26 @@ class Lint_Integration_Test extends TestCase {
 		$this->remove_tree( $tmp );
 	}
 
+	public function test_changed_mode_gates_changed_lines_in_pro_when_pro_is_a_git_repo() {
+		$tmp = sys_get_temp_dir() . '/lint-pro-changed-' . uniqid();
+		$this->copy_tree( self::FIXTURES . '/dirty', $tmp );
+		foreach ( array( "$tmp/free", "$tmp/pro" ) as $repo ) {
+			exec( "cd " . escapeshellarg( $repo ) . " && git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -q -m base" );
+		}
+		// Only Pro changes: an untranslated condition_failed() becomes a raw superglobal read on that line.
+		$file = "$tmp/pro/src/integrations/bad-plugin/conditions/bad-plugin-cond.php";
+		file_put_contents( $file, str_replace( "\$this->condition_failed( 'nope' );", "\$this->condition_failed( \$_POST['nope'] );", file_get_contents( $file ) ) );
+		exec( sprintf( '%s %s --plugin-path %s --pro-path %s --changed=HEAD --format=json 2>&1', escapeshellarg( PHP_BINARY ), escapeshellarg( self::BIN ), escapeshellarg( "$tmp/free" ), escapeshellarg( "$tmp/pro" ) ), $lines, $exit );
+		$report = json_decode( implode( "\n", $lines ), true );
+		$this->assertSame( 'bad-plugin', $report['slug'] ?? null, 'the slug is found from the Pro diff: ' . implode( "\n", $lines ) );
+		$blocking = array_values( array_filter( $report['findings'], fn( $f ) => empty( $f['preexisting'] ) && in_array( $f['severity'], array( 'P0', 'P1' ), true ) ) );
+		$this->assertCount( 1, $blocking, json_encode( $blocking ) );
+		$this->assertSame( 'L-sec', $blocking[0]['check'] );
+		$this->assertStringEndsWith( 'conditions/bad-plugin-cond.php', $blocking[0]['file'] );
+		$this->assertSame( 1, $exit );
+		$this->remove_tree( $tmp );
+	}
+
 	private function copy_tree( $src, $dst ) {
 		mkdir( $dst, 0777, true );
 		foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $src, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::SELF_FIRST ) as $item ) {
