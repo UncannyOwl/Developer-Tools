@@ -660,12 +660,17 @@ function lint_check_scope( Lint_Context $ctx ) {
 	if ( null !== $ctx->pro ) {
 		$parts = array_merge( $parts, $ctx->parts( $ctx->pro ) );
 	}
-	// Readable sentences of triggers and actions, the name of a condition, the sentence of a loop filter.
-	foreach ( $ctx->grep( '(set_readable_sentence\(|set_sentence\(|->name\s*=)\s*esc_html_x\(\s*([\'"])(.*?)\2', $parts ) as $h ) {
-		preg_match( '~esc_html_x\(\s*([\'"])(.*?)\1~', $h[2], $sm );
-		$norm = isset( $sm[2] ) ? lint_normalize_sentence( $sm[2] ) : '';
-		if ( '' !== $norm && ! isset( $built[ $norm ] ) ) {
-			$built[ $norm ] = $h[0];
+	// Readable sentences of triggers and actions, the name of a condition, the sentence of a loop filter;
+	// the call may span lines, so the comment-stripped file is matched, not its lines.
+	foreach ( $parts as $file ) {
+		if ( ! preg_match_all( '~(?:set_readable_sentence\(|set_sentence\(|->name\s*=)\s*esc_html_x\(\s*([\'"])(.*?)\1~s', $ctx->code( $file ), $all ) ) {
+			continue;
+		}
+		foreach ( $all[2] as $sentence ) {
+			$norm = lint_normalize_sentence( $sentence );
+			if ( '' !== $norm && ! isset( $built[ $norm ] ) ) {
+				$built[ $norm ] = $file;
+			}
 		}
 	}
 	$out = array();

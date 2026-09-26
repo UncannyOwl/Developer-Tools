@@ -373,6 +373,11 @@ class Lint_Integration_Test extends TestCase {
 		$this->assertNull( $this->finding( $r['report'], 'L-scope', '.md' ), 'a doc whose table matches the build raises nothing' );
 	}
 
+	public function test_a_readable_sentence_spelled_over_several_lines_still_counts_as_built() {
+		$r = $this->run_lint( 'clean', 'foo-bookings' );
+		$this->assertNull( $this->finding( $r['report'], 'L-scope', 'foo-bookings-scope.md', 'cancel {{a booking}}' ), 'the action spells set_readable_sentence() over two lines in the fixture' );
+	}
+
 	public function test_signed_off_item_not_built_is_p1() {
 		list( $tmp, $free, $pro ) = $this->scoped_copy();
 		unlink( "$free/src/integrations/foo-bookings/actions/foo-cancel-booking.php" );
