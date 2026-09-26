@@ -113,8 +113,9 @@ function lint_merge_base( $repo, $ref ) {
  * @return string[] Repo-relative paths.
  */
 function lint_changed_files( $repo, $base ) {
-	$tracked   = lint_git( $repo, 'diff --name-only ' . escapeshellarg( $base ) . ' -- src/integrations' );
-	$untracked = lint_git( $repo, 'ls-files --others --exclude-standard -- src/integrations' );
+	$paths     = 'src/integrations tests/wpunit/integrations scope-docs';
+	$tracked   = lint_git( $repo, 'diff --name-only ' . escapeshellarg( $base ) . ' -- ' . $paths );
+	$untracked = lint_git( $repo, 'ls-files --others --exclude-standard -- ' . $paths );
 	return array_unique( array_merge( $tracked, $untracked ) );
 }
 
