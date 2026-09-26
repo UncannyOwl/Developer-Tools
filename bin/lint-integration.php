@@ -113,8 +113,9 @@ function lint_merge_base( $repo, $ref ) {
  * @return string[] Repo-relative paths.
  */
 function lint_changed_files( $repo, $base ) {
-	$tracked   = lint_git( $repo, 'diff --name-only ' . escapeshellarg( $base ) . ' -- src/integrations' );
-	$untracked = lint_git( $repo, 'ls-files --others --exclude-standard -- src/integrations' );
+	$paths     = 'src/integrations tests/wpunit/integrations scope-docs';
+	$tracked   = lint_git( $repo, 'diff --name-only ' . escapeshellarg( $base ) . ' -- ' . $paths );
+	$untracked = lint_git( $repo, 'ls-files --others --exclude-standard -- ' . $paths );
 	return array_unique( array_merge( $tracked, $untracked ) );
 }
 
@@ -126,7 +127,8 @@ function lint_changed_files( $repo, $base ) {
 function lint_slugs_from_files( array $files ) {
 	$slugs = array();
 	foreach ( $files as $l ) {
-		if ( preg_match( '~^src/integrations/([^/]+)/~', $l, $m ) ) {
+		// The integration's code, its tests, or its scope doc: each changes what the lint compares.
+		if ( preg_match( '~^src/integrations/([^/]+)/~', $l, $m ) || preg_match( '~^tests/wpunit/integrations/([^/]+)/~', $l, $m ) || preg_match( '~^scope-docs/(?:.+/)?([a-z0-9-]+)-scope\.md$~', $l, $m ) ) {
 			$slugs[ $m[1] ] = true;
 		}
 	}
@@ -170,6 +172,30 @@ function lint_changed_ranges( $repo, $base, $slug ) {
  *
  * @return bool Whether the integration folder is absent from the merge base (a new integration).
  */
+/**
+ * Every {slug}-scope.md under scope-docs/, at any depth (active/plugins/, assigned/, shipped/ …), sorted.
+ *
+ * @param string $repo Free repo root.
+ * @param string $slug Integration slug.
+ *
+ * @return string[]
+ */
+function lint_find_scope_docs( $repo, $slug ) {
+	$root = $repo . '/scope-docs';
+	if ( ! is_dir( $root ) ) {
+		return array();
+	}
+	$docs = array();
+	$it   = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
+	foreach ( $it as $file ) {
+		if ( $file->getFilename() === $slug . '-scope.md' ) {
+			$docs[] = $file->getPathname();
+		}
+	}
+	sort( $docs );
+	return $docs;
+}
+
 function lint_is_new_integration( $repo, $base, $slug ) {
 	exec( 'git -C ' . escapeshellarg( $repo ) . ' cat-file -e ' . escapeshellarg( $base . ':src/integrations/' . $slug ) . ' 2>/dev/null', $o, $code );
 	return 0 !== $code;
@@ -254,15 +280,24 @@ foreach ( $slugs as $slug ) {
 		$exit = 2;
 		continue;
 	}
-	$doc = $opts['scope-doc'];
+	$doc  = $opts['scope-doc'];
+	$docs = array();
 	if ( '' === $doc ) {
-		$found = glob( $free_repo . '/scope-docs/*/' . $slug . '-scope.md' );
-		$doc   = ! empty( $found ) ? $found[0] : '';
+		$docs = lint_find_scope_docs( $free_repo, $slug );
+		$doc  = ! empty( $docs ) ? $docs[0] : '';
 	}
 	$ctx      = new Lint_Context( $slug, $free_repo, $pro_repo, $doc );
 	$findings = array();
 	foreach ( lint_all_checks() as $check ) {
 		$findings = array_merge( $findings, call_user_func( $check, $ctx ) );
+	}
+	// The doc's presence is judged here, where the run knows whether the integration is new (R0).
+	if ( count( $docs ) > 1 ) {
+		$findings[] = new Lint_Finding( 'L-scope', 'R0', 'P1', $docs[0], 0, 'two scope docs for ' . $slug . ' (' . implode( ', ', array_map( 'basename', array_map( 'dirname', $docs ) ) ) . '); the first is used, keep one' );
+	}
+	if ( '' === $doc ) {
+		$is_new     = isset( $bases[ $free_repo ] ) && lint_is_new_integration( $free_repo, $bases[ $free_repo ], $slug );
+		$findings[] = new Lint_Finding( 'L-scope', 'R0', $is_new ? 'P1' : 'report', $ctx->free, 0, $is_new ? 'new integration without a scope doc under scope-docs/: the doc is the build contract (R0)' : 'no scope doc under scope-docs/ for ' . $slug );
 	}
 	$fixed = 0;
 	if ( $opts['fix'] ) {
