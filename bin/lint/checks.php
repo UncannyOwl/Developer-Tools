@@ -626,7 +626,11 @@ function lint_check_tests( Lint_Context $ctx ) {
 }
 
 /**
- * L-scope (R0): signed-off items in the scope doc's ClickUp tasks table are found among the built sentences.
+ * L-scope (R0): the scope doc's ClickUp tasks table and the built items match in both directions.
+ *
+ * Every signed-off row is built, and every built trigger, action, condition and loop filter has a
+ * row. A missing or duplicate doc is judged in lint-integration.php, which knows whether the
+ * integration is new.
  *
  * @param Lint_Context $ctx
  *
@@ -637,27 +641,42 @@ function lint_check_scope( Lint_Context $ctx ) {
 		return array();
 	}
 	$doc = file_get_contents( $ctx->scope_doc );
-	if ( ! preg_match( '~^## ClickUp tasks\s*$(.*?)(^## |\z)~ms', $doc, $m ) ) {
-		return array( new Lint_Finding( 'L-scope', 'R0', 'report', $ctx->scope_doc, 0, 'no ClickUp tasks table in the scope doc: nothing is signed off' ) );
+	if ( ! preg_match( '~^## ClickUp tasks\s*$(.*?)(^## |^---\s*$|\z)~ms', $doc, $m ) ) {
+		return array( new Lint_Finding( 'L-scope', 'R0', 'P1', $ctx->scope_doc, 0, 'no ClickUp tasks table in the scope doc: nothing is signed off, nothing may be built (R0)' ) );
 	}
 	$signed = array();
 	foreach ( explode( "\n", $m[1] ) as $row ) {
-		if ( preg_match( '~^\| *[🔴🟠🟡🟢⚠️]+ *([^|]+?) *\|~u', $row, $r ) ) {
-			$signed[] = lint_normalize_sentence( $r[1] );
+		// | 🔴 [T] A user is approved (Free) | https://app.clickup.com/t/… |
+		if ( preg_match( '~^\| *[🔴🟠🟡🟢⚠️]+ *(?:\[[TACL]\] *)?([^|]+?) *(?:\((Free|Pro)\))? *\|~u', $row, $r ) ) {
+			// Without a Pro checkout the Pro rows cannot be verified either way.
+			if ( null === $ctx->pro && isset( $r[2] ) && 'Pro' === $r[2] ) {
+				continue;
+			}
+			$signed[ lint_normalize_sentence( $r[1] ) ] = trim( $r[1] );
 		}
 	}
 	$built = array();
-	foreach ( $ctx->grep( "esc_html_x\( *'((?:\{\{|(?:A|An|The) |[A-Z][a-z]+ )[^']+)'", lint_all_files( $ctx ) ) as $h ) {
-		preg_match( "~esc_html_x\( *'([^']+)'~", $h[2], $s );
-		$norm = lint_normalize_sentence( $s[1] );
+	$parts = $ctx->parts( $ctx->free );
+	if ( null !== $ctx->pro ) {
+		$parts = array_merge( $parts, $ctx->parts( $ctx->pro ) );
+	}
+	// Readable sentences of triggers and actions, the name of a condition, the sentence of a loop filter.
+	foreach ( $ctx->grep( '(set_readable_sentence\(|set_sentence\(|->name\s*=)\s*esc_html_x\(\s*([\'"])(.*?)\2', $parts ) as $h ) {
+		preg_match( '~esc_html_x\(\s*([\'"])(.*?)\1~', $h[2], $sm );
+		$norm = isset( $sm[2] ) ? lint_normalize_sentence( $sm[2] ) : '';
 		if ( '' !== $norm && ! isset( $built[ $norm ] ) ) {
 			$built[ $norm ] = $h[0];
 		}
 	}
 	$out = array();
-	foreach ( $signed as $s ) {
-		if ( ! isset( $built[ $s ] ) ) {
-			$out[] = new Lint_Finding( 'L-scope', 'R0', 'report', $ctx->scope_doc, 0, "signed-off item not found among built sentences: $s" );
+	foreach ( $signed as $norm => $sentence ) {
+		if ( ! isset( $built[ $norm ] ) ) {
+			$out[] = new Lint_Finding( 'L-scope', 'R0', 'P1', $ctx->scope_doc, 0, "signed-off item not built: $norm" );
+		}
+	}
+	foreach ( $built as $norm => $file ) {
+		if ( ! isset( $signed[ $norm ] ) ) {
+			$out[] = new Lint_Finding( 'L-scope', 'R0', 'P1', $file, 0, "built item is not in the ClickUp tasks table: $norm (a task is the lead's sign-off, R0)" );
 		}
 	}
 	return $out;
