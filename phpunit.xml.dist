@@ -8,5 +8,8 @@
 		<testsuite name="lint">
 			<directory>tests/lint</directory>
 		</testsuite>
+		<testsuite name="metadata">
+			<directory>tests/metadata</directory>
+		</testsuite>
 	</testsuites>
 </phpunit>

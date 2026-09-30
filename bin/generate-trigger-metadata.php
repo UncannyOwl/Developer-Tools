@@ -13,6 +13,10 @@
  * Triggers whose `definition()` returns null stay on the eager path — they
  * are simply absent from the metadata file.
  *
+ * A trigger that declares `->dispatcher( Foo_Dispatcher::class )` must name a
+ * loadable class whose public static `boot()` takes no argument: the engine
+ * boots it at `plugins_loaded`. Any other declaration fails the build.
+ *
  * Usage:
  *   php bin/generate-trigger-metadata.php --plugin-path /path/to/plugin
  *
@@ -207,6 +211,7 @@ spl_autoload_register(
 						public $trigger_meta = "";
 						public $hooks = array();
 						public $enqueue_gate = null;
+						public $dispatcher = null;
 						private function __construct( $code, $integration ) {
 							$this->code        = $code;
 							$this->integration = $integration;
@@ -229,6 +234,7 @@ spl_autoload_register(
 							);
 							return $this;
 						}
+						public function dispatcher( $dispatcher ) { $this->dispatcher = (string) $dispatcher; return $this; }
 						public function get_trigger_meta() {
 							return "" === $this->trigger_meta ? $this->code : $this->trigger_meta;
 						}
@@ -243,6 +249,9 @@ spl_autoload_register(
 							);
 							if ( null !== $this->enqueue_gate ) {
 								$entry["enqueue_gate"] = $this->enqueue_gate;
+							}
+							if ( null !== $this->dispatcher ) {
+								$entry["dispatcher"] = $this->dispatcher;
 							}
 							return $entry;
 						}
@@ -564,6 +573,20 @@ if ( ! empty( $drift_errors ) ) {
 	exit( 1 );
 }
 
+// Dispatcher check — the engine calls `{dispatcher}::boot()` with no argument
+// at `plugins_loaded` for every trigger a live recipe uses, so a bad
+// declaration would fatal on each of those requests. Fail the build instead.
+$dispatcher_errors = find_dispatcher_errors( $trigger_metadata );
+
+if ( ! empty( $dispatcher_errors ) ) {
+	fwrite( STDERR, "\n=== Invalid trigger dispatcher ===\n\n" );
+	foreach ( $dispatcher_errors as $err ) {
+		fwrite( STDERR, "  - {$err}\n" );
+	}
+	fwrite( STDERR, "Fix: ->dispatcher() must name a loadable class whose public static boot() takes no argument.\n" );
+	exit( 1 );
+}
+
 write_metadata_file( $plugin_path, $trigger_metadata );
 write_cache_file( $cache_file, $new_cache );
 
@@ -616,6 +639,63 @@ function write_metadata_file( $plugin_path, array $metadata ) {
 		fwrite( STDERR, "Failed to write trigger metadata file: {$target}\n" );
 		exit( 1 );
 	}
+}
+
+/**
+ * List every trigger whose declared dispatcher the engine could not boot.
+ *
+ * @param array $metadata Code => entry.
+ *
+ * @return string[] One message per bad declaration.
+ */
+function find_dispatcher_errors( array $metadata ) {
+
+	$errors = array();
+
+	foreach ( $metadata as $code => $entry ) {
+
+		if ( empty( $entry['dispatcher'] ) ) {
+			continue;
+		}
+
+		$error = dispatcher_error( (string) $entry['dispatcher'] );
+
+		if ( '' !== $error ) {
+			$errors[] = sprintf( '%s declares %s: %s', $code, $entry['dispatcher'], $error );
+		}
+	}
+
+	return $errors;
+}
+
+/**
+ * Why a dispatcher class cannot be booted with `{dispatcher}::boot()`, or ''.
+ *
+ * @param string $dispatcher Dispatcher FQCN.
+ *
+ * @return string
+ */
+function dispatcher_error( $dispatcher ) {
+
+	if ( ! class_exists( $dispatcher ) ) {
+		return 'class not loadable';
+	}
+
+	if ( ! method_exists( $dispatcher, 'boot' ) ) {
+		return 'no boot() method';
+	}
+
+	$boot = new ReflectionMethod( $dispatcher, 'boot' );
+
+	if ( ! $boot->isPublic() || ! $boot->isStatic() ) {
+		return 'boot() must be public static';
+	}
+
+	if ( 0 !== $boot->getNumberOfRequiredParameters() ) {
+		return 'boot() must take no required argument';
+	}
+
+	return '';
 }
 
 /**
