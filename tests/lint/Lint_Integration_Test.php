@@ -349,6 +349,110 @@ class Lint_Integration_Test extends TestCase {
 		$this->remove_tree( $tmp );
 	}
 
+	// ---------------------------------------------------------------- L-scope (R0)
+
+	/**
+	 * Copy the clean fixture and hand back its Free and Pro roots.
+	 *
+	 * @return array{0:string,1:string,2:string} tmp, free, pro
+	 */
+	private function scoped_copy() {
+		$tmp = sys_get_temp_dir() . '/lint-scope-' . uniqid();
+		$this->copy_tree( self::FIXTURES . '/clean', $tmp );
+		return array( $tmp, "$tmp/free", "$tmp/pro" );
+	}
+
+	private function run_on( $free, $pro, $extra = '' ) {
+		exec( sprintf( '%s %s --plugin-path %s --pro-path %s --slug foo-bookings --format=json %s 2>&1', escapeshellarg( PHP_BINARY ), escapeshellarg( self::BIN ), escapeshellarg( $free ), escapeshellarg( $pro ), $extra ), $lines, $exit );
+		return array( 'report' => json_decode( implode( "\n", $lines ), true ) ?: array(), 'exit' => $exit, 'raw' => implode( "\n", $lines ) );
+	}
+
+	public function test_scope_doc_is_found_under_any_scope_docs_folder() {
+		$r = $this->run_lint( 'clean', 'foo-bookings' );
+		$this->assertStringEndsWith( 'scope-docs/active/plugins/foo-bookings-scope.md', $r['report']['scope_doc'] ?? '', 'the nested doc is discovered: ' . $r['raw'] );
+		$this->assertNull( $this->finding( $r['report'], 'L-scope', '.md' ), 'a doc whose table matches the build raises nothing' );
+	}
+
+	public function test_a_readable_sentence_spelled_over_several_lines_still_counts_as_built() {
+		$r = $this->run_lint( 'clean', 'foo-bookings' );
+		$this->assertNull( $this->finding( $r['report'], 'L-scope', 'foo-bookings-scope.md', 'cancel {{a booking}}' ), 'the action spells set_readable_sentence() over two lines in the fixture' );
+	}
+
+	public function test_signed_off_item_not_built_is_p1() {
+		list( $tmp, $free, $pro ) = $this->scoped_copy();
+		unlink( "$free/src/integrations/foo-bookings/actions/foo-cancel-booking.php" );
+		$r = $this->run_on( $free, $pro );
+		$this->assert_flagged( $r['report'], 'L-scope', 'P1', 'foo-bookings-scope.md', 'signed-off item not built: cancel {{a booking}}' );
+		$this->assertSame( 1, $r['exit'] );
+		$this->remove_tree( $tmp );
+	}
+
+	public function test_built_item_missing_from_the_tasks_table_is_p1() {
+		list( $tmp, $free, $pro ) = $this->scoped_copy();
+		$doc = "$free/scope-docs/active/plugins/foo-bookings-scope.md";
+		file_put_contents( $doc, preg_replace( '~^\| 🔴 \[L\][^\n]*\n~mu', '', file_get_contents( $doc ) ) );
+		$r = $this->run_on( $free, $pro );
+		$this->assert_flagged( $r['report'], 'L-scope', 'P1', 'loop-filters/foo-bookings-have-status.php', 'built item is not in the ClickUp tasks table: a booking has {{a status}}' );
+		$this->assertSame( 1, $r['exit'] );
+		$this->remove_tree( $tmp );
+	}
+
+	public function test_doc_without_a_tasks_table_is_p1() {
+		list( $tmp, $free, $pro ) = $this->scoped_copy();
+		$doc = "$free/scope-docs/active/plugins/foo-bookings-scope.md";
+		file_put_contents( $doc, preg_replace( '~^## ClickUp tasks.*?^---~ms', '---', file_get_contents( $doc ) ) );
+		$r = $this->run_on( $free, $pro );
+		$this->assert_flagged( $r['report'], 'L-scope', 'P1', 'foo-bookings-scope.md', 'no ClickUp tasks table' );
+		$this->remove_tree( $tmp );
+	}
+
+	public function test_two_scope_docs_is_p1_and_the_first_is_used() {
+		list( $tmp, $free, $pro ) = $this->scoped_copy();
+		mkdir( "$free/scope-docs/assigned", 0777, true );
+		copy( "$free/scope-docs/active/plugins/foo-bookings-scope.md", "$free/scope-docs/assigned/foo-bookings-scope.md" );
+		$r = $this->run_on( $free, $pro );
+		$this->assert_flagged( $r['report'], 'L-scope', 'P1', 'foo-bookings-scope.md', 'two scope docs' );
+		$this->assertNotEmpty( $r['report']['scope_doc'] );
+		$this->remove_tree( $tmp );
+	}
+
+	public function test_missing_doc_is_a_report_for_an_existing_integration() {
+		list( $tmp, $free, $pro ) = $this->scoped_copy();
+		unlink( "$free/scope-docs/active/plugins/foo-bookings-scope.md" );
+		$r = $this->run_on( $free, $pro );
+		$this->assert_flagged( $r['report'], 'L-scope', 'report', 'foo-bookings', 'no scope doc' );
+		$this->assertSame( 0, $r['exit'], $r['raw'] );
+		$this->remove_tree( $tmp );
+	}
+
+	public function test_new_integration_without_a_scope_doc_blocks_in_changed_mode() {
+		$tmp = sys_get_temp_dir() . '/lint-new-nodoc-' . uniqid();
+		$this->copy_tree( self::FIXTURES . '/clean', $tmp );
+		$repo = "$tmp/free";
+		unlink( "$repo/scope-docs/active/plugins/foo-bookings-scope.md" );
+		exec( "cd " . escapeshellarg( $repo ) . " && git init -q && mkdir -p src/integrations/keep && touch src/integrations/keep/.gitkeep && git add src/integrations/keep && git -c user.email=t@t -c user.name=t commit -q -m base" );
+		exec( sprintf( '%s %s --plugin-path %s --pro-path %s --changed=HEAD --format=json 2>&1', escapeshellarg( PHP_BINARY ), escapeshellarg( self::BIN ), escapeshellarg( $repo ), escapeshellarg( "$tmp/pro" ) ), $lines, $exit );
+		$report = json_decode( implode( "\n", $lines ), true );
+		$this->assert_flagged( $report, 'L-scope', 'P1', 'foo-bookings', 'new integration without a scope doc' );
+		$this->assertSame( 1, $exit );
+		$this->remove_tree( $tmp );
+	}
+
+	public function test_changed_mode_picks_the_slug_from_a_scope_doc_or_test_change() {
+		$tmp = sys_get_temp_dir() . '/lint-doc-changed-' . uniqid();
+		$this->copy_tree( self::FIXTURES . '/clean', $tmp );
+		$repo = "$tmp/free";
+		exec( "cd " . escapeshellarg( $repo ) . " && git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -q -m base" );
+		// Only the doc changes: drop the action's row from the tasks table.
+		$doc = "$repo/scope-docs/active/plugins/foo-bookings-scope.md";
+		file_put_contents( $doc, preg_replace( '~^\| 🔴 \[A\][^\n]*\n~mu', '', file_get_contents( $doc ) ) );
+		exec( sprintf( '%s %s --plugin-path %s --pro-path %s --changed=HEAD --format=json 2>&1', escapeshellarg( PHP_BINARY ), escapeshellarg( self::BIN ), escapeshellarg( $repo ), escapeshellarg( "$tmp/pro" ) ), $lines, $exit );
+		$report = json_decode( implode( "\n", $lines ), true );
+		$this->assertSame( 'foo-bookings', $report['slug'] ?? null, 'a scope-doc-only change lints its integration: ' . implode( "\n", $lines ) );
+		$this->assert_flagged( $report, 'L-scope', 'P1', 'actions/foo-cancel-booking.php', 'built item is not in the ClickUp tasks table' );
+		$this->remove_tree( $tmp );
+	}
+
 	private function copy_tree( $src, $dst ) {
 		mkdir( $dst, 0777, true );
 		foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $src, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::SELF_FIRST ) as $item ) {

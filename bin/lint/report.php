@@ -32,6 +32,7 @@ function lint_report_array( Lint_Context $ctx, array $findings, $fixed = 0 ) {
 		'slug'     => $ctx->slug,
 		'free'     => $ctx->free,
 		'pro'      => $ctx->pro,
+		'scope_doc' => '' !== $ctx->scope_doc ? $ctx->scope_doc : null,
 		'findings' => $rows,
 		'summary'  => $summary,
 		'fixed'    => $fixed,

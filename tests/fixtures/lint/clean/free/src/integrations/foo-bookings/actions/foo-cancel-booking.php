@@ -26,7 +26,9 @@ class Foo_Cancel_Booking extends Action {
 				$this->get_action_meta()
 			)
 		);
-		$this->set_readable_sentence( esc_html_x( 'Cancel {{a booking}}', 'Foo Bookings', 'uncanny-automator' ) );
+		$this->set_readable_sentence(
+			esc_html_x( 'Cancel {{a booking}}', 'Foo Bookings', 'uncanny-automator' )
+		);
 	}
 
 	/**
