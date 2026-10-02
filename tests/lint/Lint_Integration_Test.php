@@ -188,6 +188,24 @@ class Lint_Integration_Test extends TestCase {
 		$this->assert_flagged( $r['report'], 'L-remote', 'P0', 'actions/bad-plugin-do.php' );
 	}
 
+	// ---------------------------------------------------------------- sentinel: R15 "Any" / "All" and missing values
+
+	public function test_all_option_on_an_all_segment_in_an_action_is_not_flagged() {
+		$r = $this->run_lint( 'sentinel', 'sentinel-plugin' );
+		$this->assertNull( $this->finding( $r['report'], 'L-remote', 'actions/sentinel-remove-from-group.php' ) );
+	}
+
+	public function test_empty_value_turned_into_the_sentinel_is_reported() {
+		$r = $this->run_lint( 'sentinel', 'sentinel-plugin' );
+		$this->assert_flagged( $r['report'], 'L-any', 'report', 'triggers/sentinel-joins-group.php', 'an empty value becomes' );
+		$this->assert_flagged( $r['report'], 'L-any', 'report', 'actions/sentinel-remove-from-group.php', 'an empty value becomes' );
+	}
+
+	public function test_missing_key_defaulted_to_the_sentinel_is_not_reported() {
+		$r = $this->run_lint( 'sentinel', 'sentinel-plugin' );
+		$this->assertNull( $this->finding( $r['report'], 'L-any', 'triggers/sentinel-leaves-group.php' ) );
+	}
+
 	public function test_public_remote_data_handler_is_flagged() {
 		$r = $this->run_lint( 'dirty', 'bad-plugin' );
 		$this->assert_flagged( $r['report'], 'L-remote', 'P1', 'helpers/bad-plugin-helpers.php' );
