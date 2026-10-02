@@ -681,7 +681,7 @@ function lint_check_scope( Lint_Context $ctx ) {
 	$signed = array();
 	foreach ( explode( "\n", $m[1] ) as $row ) {
 		// | 🔴 [T] A user is approved (Free) | https://app.clickup.com/t/… |
-		if ( preg_match( '~^\| *[🔴🟠🟡🟢⚠️]+ *(?:\[[TACL]\] *)?([^|]+?) *(?:\((Free|Pro)\))? *\|~u', $row, $r ) ) {
+		if ( preg_match( '~^\| *[🔴🟠🟡🟢⚠️]+ *(?:\[[TACL]\] *)?([^|]+?) *(?:\((Free|Pro)\))? *\|~u', $row, $r ) && ! lint_scope_row_is_parked( $row ) ) {
 			// Without a Pro checkout the Pro rows cannot be verified either way.
 			if ( null === $ctx->pro && isset( $r[2] ) && 'Pro' === $r[2] ) {
 				continue;
@@ -719,6 +719,19 @@ function lint_check_scope( Lint_Context $ctx ) {
 		}
 	}
 	return $out;
+}
+
+/**
+ * A tasks-table row the lead parked, deferred, dropped or rejected is no sign-off (R0).
+ *
+ * Only the cells after the item are read, since an item's own sentence may say "rejected".
+ *
+ * @param string $row A markdown table row.
+ *
+ * @return bool
+ */
+function lint_scope_row_is_parked( $row ) {
+	return (bool) preg_match( '~\b(parked|deferred|dropped|rejected)\b|⏳|⛔~iu', implode( '|', array_slice( explode( '|', $row ), 2 ) ) );
 }
 
 /**

@@ -405,6 +405,18 @@ class Lint_Integration_Test extends TestCase {
 		$this->remove_tree( $tmp );
 	}
 
+	public function test_parked_row_is_no_sign_off() {
+		list( $tmp, $free, $pro ) = $this->scoped_copy();
+		$doc = "$free/scope-docs/active/plugins/foo-bookings-scope.md";
+		file_put_contents( $doc, str_replace( 'https://app.clickup.com/t/fixture2 |', 'https://app.clickup.com/t/fixture2 — parked |', file_get_contents( $doc ) ) );
+		$built = $this->run_on( $free, $pro );
+		$this->assert_flagged( $built['report'], 'L-scope', 'P1', 'actions/foo-cancel-booking.php', 'built item is not in the ClickUp tasks table: cancel {{a booking}}' );
+		unlink( "$free/src/integrations/foo-bookings/actions/foo-cancel-booking.php" );
+		$removed = $this->run_on( $free, $pro );
+		$this->assertNull( $this->finding( $removed['report'], 'L-scope', 'foo-bookings-scope.md', 'signed-off item not built' ) );
+		$this->remove_tree( $tmp );
+	}
+
 	public function test_built_item_missing_from_the_tasks_table_is_p1() {
 		list( $tmp, $free, $pro ) = $this->scoped_copy();
 		$doc = "$free/scope-docs/active/plugins/foo-bookings-scope.md";
