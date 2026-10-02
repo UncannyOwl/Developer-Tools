@@ -256,7 +256,7 @@ function lint_check_tokens( Lint_Context $ctx ) {
 }
 
 /**
- * L-remote (R14): remote data handlers and field configs; actions use _strict segments and never offer "Any".
+ * L-remote (R14): remote data handlers and field configs; actions use _strict or _all segments and never offer "Any".
  *
  * @param Lint_Context $ctx
  *
@@ -269,28 +269,62 @@ function lint_check_remote( Lint_Context $ctx ) {
 	$out   = array_merge( $out, lint_from_hits( $ctx->grep( 'function remote_data_get_[a-z_0-9]+\( *Remote_Data_Request', $files ), 'L-remote', 'R14', 'P1', '$request must be untyped' ) );
 	$acts  = lint_files_in( $ctx, 'actions' );
 	foreach ( $ctx->grep( "remote_data_(load|parent|search)_config\( *'[a-z_0-9]+'", $acts ) as $h ) {
-		if ( ! preg_match( "~_strict'~", $h[2] ) ) {
-			$out[] = new Lint_Finding( 'L-remote', 'R14', 'P1', $h[0], $h[1], 'action on a non-strict segment' );
+		if ( ! preg_match( "~_(strict|all)'~", $h[2] ) ) {
+			$out[] = new Lint_Finding( 'L-remote', 'R14', 'P1', $h[0], $h[1], 'action on a segment that is neither _strict nor _all' );
 		}
 	}
-	$out = array_merge( $out, lint_from_hits( $ctx->grep( "'value' *=> *'-1'", $acts ), 'L-remote', 'R14', 'P0', '"Any" option in an action' ) );
+	return array_merge( $out, lint_any_option_in_actions( $ctx, $acts ) );
+}
+
+/**
+ * An action's -1 is "All", which R15 allows; a -1 value with an "Any" label within three lines is not.
+ *
+ * @param Lint_Context $ctx
+ * @param string[]     $acts Action files.
+ *
+ * @return Lint_Finding[]
+ */
+function lint_any_option_in_actions( Lint_Context $ctx, array $acts ) {
+	$out = array();
+	foreach ( $acts as $f ) {
+		$lines = explode( "\n", $ctx->code( $f ) );
+		foreach ( $lines as $i => $line ) {
+			$window = implode( "\n", array_slice( $lines, max( 0, $i - 3 ), 7 ) );
+			if ( preg_match( "~=> *'-1'|'-1' *=>~", $line ) && preg_match( "~'Any\b~", $window ) ) {
+				$out[] = new Lint_Finding( 'L-remote', 'R14', 'P0', $f, $i + 1, '"Any" option in an action: offer "All" (-1) or a specific item', false, array( 'text' => trim( $line ) ) );
+			}
+		}
+	}
 	return $out;
 }
 
 /**
- * L-any (R15): a cast of a selection is listed so a person confirms the '-1' compare runs first.
+ * L-any (R15): a cast of a selection is listed so a person confirms the '-1' compare runs first,
+ * and an empty value turned into '-1' is listed, since only a missing key may default to it.
  *
  * @param Lint_Context $ctx
  *
  * @return Lint_Finding[]
  */
 function lint_check_any( Lint_Context $ctx ) {
-	return lint_from_hits(
-		$ctx->grep( '(absint|intval)\( *\$(trigger|selected|values|meta)|\(int\) *\$(trigger|selected)', lint_all_files( $ctx ) ),
+	$files = lint_all_files( $ctx );
+	$out   = lint_from_hits(
+		$ctx->grep( '(absint|intval)\( *\$(trigger|selected|values|meta)|\(int\) *\$(trigger|selected)', $files ),
 		'L-any',
 		'R15',
 		'report',
 		"confirm the '-1' string compare runs before this cast"
+	);
+	$sentinel = '(\'-1\'|"-1"|(self|static)::[A-Z_]*(ANY|ALL)[A-Z_]*)';
+	return array_merge(
+		$out,
+		lint_from_hits(
+			$ctx->grep( '\?: *' . $sentinel . '|empty\([^)]*\) *\? *' . $sentinel, $files ),
+			'L-any',
+			'R15',
+			'report',
+			"an empty value becomes '-1' (Any or All): only a missing key may default to it (??)"
+		)
 	);
 }
 
