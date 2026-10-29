@@ -83,4 +83,25 @@ class Config_Test extends TestCase {
 	 */
 	public function docblock_fixture() {
 	}
+
+	public function test_a_named_profile_gets_its_own_databases() {
+		putenv( 'WP_TEST_KERNEL_PROFILE=Migration' );
+		putenv( 'TEST_TOKEN=2' );
+
+		$this->assertSame( 'automator_kernel_migration_2', $this->config()->worker_db_name() );
+		putenv( 'WP_TEST_KERNEL_PROFILE' );
+	}
+
+	public function test_legacy_notice_mode_is_the_plugins_choice_unless_the_environment_overrides_it() {
+		$settings = array(
+			'plugin_root'    => __DIR__,
+			'wp_root'        => $this->wp_root,
+			'legacy_notices' => true,
+		);
+		$this->assertTrue( Config::from_array( $settings )->get( 'legacy_notices' ) );
+
+		putenv( 'WP_TEST_KERNEL_LEGACY_NOTICES=0' );
+		$this->assertFalse( Config::from_array( $settings )->get( 'legacy_notices' ) );
+		putenv( 'WP_TEST_KERNEL_LEGACY_NOTICES' );
+	}
 }

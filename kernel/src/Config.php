@@ -55,6 +55,8 @@ final class Config {
 			'multisite'          => false,
 			'cache_dir'          => '',
 			'autoloader'         => null,
+			'profile'            => '',
+			'legacy_notices'     => false,
 		);
 
 		$values = array_merge( $defaults, $input );
@@ -79,7 +81,17 @@ final class Config {
 			$values['multisite'] = true;
 		}
 
-		$values['legacy_notices'] = ( '1' === getenv( 'WP_TEST_KERNEL_LEGACY_NOTICES' ) );
+		// WP_TEST_KERNEL_LEGACY_NOTICES=1 / 0 overrides the plugin's choice either way.
+		$legacy = getenv( 'WP_TEST_KERNEL_LEGACY_NOTICES' );
+		if ( false !== $legacy && '' !== $legacy ) {
+			$values['legacy_notices'] = ( '1' === $legacy );
+		}
+
+		$profile = getenv( 'WP_TEST_KERNEL_PROFILE' );
+		if ( false !== $profile && '' !== $profile ) {
+			$values['profile'] = $profile;
+		}
+		$values['profile'] = (string) preg_replace( '/[^a-z0-9_]/', '', strtolower( (string) $values['profile'] ) );
 
 		if ( '' === $values['cache_dir'] ) {
 			$values['cache_dir'] = rtrim( (string) $values['plugin_root'], '/' ) . '/tests/kernel/.cache';
@@ -146,6 +158,10 @@ final class Config {
 	 * @return string
 	 */
 	public function profile() {
+		if ( '' !== $this->values['profile'] ) {
+			return $this->values['profile'];
+		}
+
 		return $this->is_multisite() ? 'multisite' : 'single';
 	}
 
