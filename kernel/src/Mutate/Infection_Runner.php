@@ -60,12 +60,19 @@ final class Infection_Runner {
 		// report an untested file as "nothing to mutate" and make the overall score equal the covered one.
 		// A coverage driver loaded through an ini scan directory reaches PHPUnit's process-isolated
 		// children too; `-d` options (coverage_options) reach only the initial run's own process.
+		// Infection stops its initial test run at the first byte on stderr (InitialTestsRunner), so the
+		// kernel must not display PHP warnings there; they still reach PHPUnit and php-errors.log.
 		$ini_dir = (string) ( getenv( 'WP_TEST_KERNEL_COVERAGE_INI_DIR' ) ?: $this->scope->get( 'coverage_ini_dir' ) );
-		$env     = '' === $ini_dir ? '' : 'PHP_INI_SCAN_DIR=' . escapeshellarg( ':' . $ini_dir ) . ' ';
+		$env     = 'WP_TEST_KERNEL_DISPLAY_ERRORS=0 ' . ( '' === $ini_dir ? '' : 'PHP_INI_SCAN_DIR=' . escapeshellarg( ':' . $ini_dir ) . ' ' );
+
+		// The JSON log is what is read. Printing escaped mutants to the console can crash Infection
+		// ("Incorrectly nested style tag found" when a mutated line reads like a console tag), so a
+		// normal run prints none; an inspection run (--show-mutations) still asks for them.
+		$show = preg_grep( '/^--show-mutations/', $extra_args ) ? '' : '--show-mutations=0 ';
 
 		$filter  = implode( ',', $run['files'] );
 		$command = sprintf(
-			'cd %s && ' . $env . '%s vendor/bin/infection --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --with-uncovered --no-progress --no-interaction --initial-tests-php-options=%s %s 2>&1',
+			'cd %s && ' . $env . '%s vendor/bin/infection --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --with-uncovered --no-progress --no-interaction ' . $show . '--initial-tests-php-options=%s %s 2>&1',
 			escapeshellarg( $this->project_dir ),
 			escapeshellarg( PHP_BINARY ),
 			escapeshellarg( $dir . '/infection.json5' ),
