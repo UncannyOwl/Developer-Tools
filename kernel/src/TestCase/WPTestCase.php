@@ -19,6 +19,23 @@ abstract class WPTestCase extends \WP_UnitTestCase {
 	use \Codeception\Test\Feature\Stub;
 
 	/**
+	 * After WordPress' own tear_down (rollback, hooks restored, caches flushed), run the plugin's
+	 * after_each_test callables: in-process caches a rollback cannot reach, which would otherwise make
+	 * a test depend on what ran before it in the same process.
+	 *
+	 * @return void
+	 */
+	public function tear_down() {
+		parent::tear_down();
+
+		foreach ( (array) Boot::config()->get( 'after_each_test' ) as $callback ) {
+			if ( is_callable( $callback ) ) {
+				call_user_func( $callback );
+			}
+		}
+	}
+
+	/**
 	 * Fail on unexpected _doing_it_wrong() / deprecation notices, as WordPress core's test case does.
 	 *
 	 * wp-browser v3 on Codeception 4 never ran this check (Codeception never calls

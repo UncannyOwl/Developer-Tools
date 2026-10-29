@@ -104,4 +104,12 @@ class Config_Test extends TestCase {
 		$this->assertFalse( Config::from_array( $settings )->get( 'legacy_notices' ) );
 		putenv( 'WP_TEST_KERNEL_LEGACY_NOTICES' );
 	}
+
+	public function test_after_each_test_callbacks_are_kept_as_given() {
+		$callback = 'strlen';
+		$config   = Config::from_array( array( 'plugin_root' => __DIR__, 'wp_root' => $this->wp_root, 'after_each_test' => array( $callback ) ) );
+
+		$this->assertSame( array( $callback ), $config->get( 'after_each_test' ) );
+		$this->assertSame( array(), $this->config()->get( 'after_each_test' ), 'None by default.' );
+	}
 }

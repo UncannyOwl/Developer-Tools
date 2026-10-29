@@ -57,6 +57,9 @@ final class Config {
 			'autoloader'         => null,
 			'profile'            => '',
 			'legacy_notices'     => false,
+			// Callables run after every test, once WordPress has rolled the test back: for a plugin's own
+			// in-process caches that outlive a rollback (the kernel cannot know them).
+			'after_each_test'    => array(),
 		);
 
 		$values = array_merge( $defaults, $input );
