@@ -94,8 +94,11 @@ final class Junit_Report {
 			$name = $m[1];
 		}
 
-		// Pest reports `test_foo_bar` as "Foo bar"; compare everything in that form.
-		$name = strtolower( trim( str_replace( '_', ' ', (string) preg_replace( '/^test_?/i', '', $name ) ) ) );
+		// Pest reports `test_foo_bar` as "Foo bar", `testFooAt1pm` as "Foo at 1 pm", and drops a doubled
+		// `test_test_` prefix: compare everything as lower-case words split at case and digit changes.
+		$name = (string) preg_replace( '/^(test_?)+/i', '', trim( $name ) );
+		$name = (string) preg_replace( '/(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])|(?<=[0-9])(?=[A-Za-z])/', ' ', $name );
+		$name = strtolower( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', ' ', $name ) ) );
 
 		return $class . '::' . $name . $set;
 	}

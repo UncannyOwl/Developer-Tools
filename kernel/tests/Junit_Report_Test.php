@@ -55,8 +55,8 @@ class Junit_Report_Test extends TestCase {
 		$this->assertSame( 'Failed asserting that false is true.', $tests['T::fail']['message'] );
 		$this->assertSame( Junit_Report::FAIL, $tests['T::error']['outcome'] );
 		$this->assertSame( Junit_Report::SKIP, $tests['T::skip']['outcome'] );
-		$this->assertSame( Junit_Report::PASS, $tests['T::risky v9']['outcome'] );
-		$this->assertSame( Junit_Report::SKIP, $tests['T::incomplete v9']['outcome'] );
+		$this->assertSame( Junit_Report::PASS, $tests['T::risky v 9']['outcome'] );
+		$this->assertSame( Junit_Report::SKIP, $tests['T::incomplete v 9']['outcome'] );
 	}
 
 	public function test_files_are_listed_in_run_order() {
@@ -74,5 +74,13 @@ class Junit_Report_Test extends TestCase {
 			array( 'Usage_Reports_Test::x', 'Other_Test::y' ),
 			array_keys( Junit_Report::rename_classes( $old, array( 'Usage_Reports_Tests' => 'Usage_Reports_Test' ) ) )
 		);
+	}
+
+	public function test_camel_case_digits_and_a_doubled_prefix_normalise_like_pest() {
+		$phpunit = $this->read( '<testsuites><testsuite><testcase name="testNextFridayAt1pm" class="A_Test"/><testcase name="test_test_restore_row" class="A_Test"/><testcase name="test_1pm_tomorrow" class="A_Test"/></testsuite></testsuites>' );
+		$pest    = $this->read( '<testsuites><testsuite><testcase name="Next friday at 1 pm" class="A_Test"/><testcase name="Restore row" class="A_Test"/><testcase name="1pm tomorrow" class="A_Test"/></testsuite></testsuites>' );
+
+		$this->assertSame( array( 'A_Test::next friday at 1 pm', 'A_Test::restore row', 'A_Test::1 pm tomorrow' ), array_keys( $phpunit ) );
+		$this->assertSame( array_keys( $phpunit ), array_keys( $pest ) );
 	}
 }
