@@ -64,6 +64,8 @@ composer unit-tests
 
 A consuming plugin points PHPUnit's bootstrap at its own file, which calls the kernel's `Boot` with the plugin's profiles; Automator Free's `tests/bootstrap-wordpress.php` and its `docs/reference/testing.md` are the worked example.
 
+Which WordPress the tests run on: with `wp_root` unset (no `WP_ROOT_FOLDER`), the kernel's own, release `wp_version` from wordpress.org (`kernel/src/Wordpress_Core.php`): downloaded once per machine into `~/.cache/wp-test-kernel` (or `$XDG_CACHE_HOME`, or `WP_TEST_KERNEL_DOWNLOADS`), checked against wordpress.org's SHA-1, extracted once per checkout beside it, never inside the checkout. Its `wp-content` is the release's own, so a dev site's must-use plugins, drop-ins and themes do not reach the tests. `WP_ROOT_FOLDER` names an existing install instead. Either way plugins load from the folder holding the checkout (`plugins_dir`). Only PHP 8.4 and a MySQL user that can create databases are needed (`host`, `host:port` or `localhost:/path/to/socket`).
+
 ### Integration lint
 ```bash
 # Lint one integration (Free + Pro); P0/P1 fail, P2 and reports do not

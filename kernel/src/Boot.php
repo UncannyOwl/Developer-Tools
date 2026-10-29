@@ -40,6 +40,7 @@ final class Boot {
 
 		self::route_php_error_log( $config );
 
+		Wordpress_Core::ensure( $config );
 		$snapshot = Snapshot::ensure( $config );
 		$db_name  = Worker_Database::prepare( $config, $snapshot );
 
