@@ -84,9 +84,19 @@ final class Plan {
 			}
 		}
 
+		// On a case-insensitive filesystem (macOS) both mirror spellings can name one folder, so the same
+		// test file arrives twice under two paths; PHPUnit would then declare its class twice. Keep one per
+		// file on disk.
 		$relative = array();
+		$seen     = array();
 		foreach ( array_unique( $tests ) as $test ) {
-			$relative[] = substr( $test, strlen( $scope->root() ) + 1 );
+			$stat = @stat( $test ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- a vanished file is simply skipped.
+			$key  = false === $stat ? $test : $stat['dev'] . ':' . $stat['ino'];
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+			$seen[ $key ] = true;
+			$relative[]   = substr( $test, strlen( $scope->root() ) + 1 );
 		}
 		sort( $relative );
 
