@@ -101,6 +101,9 @@ function wp_test_kernel_parity( array $options ) {
 	if ( ! empty( $options['allow'] ) && is_readable( (string) $options['allow'] ) ) {
 		$allow = (array) json_decode( (string) file_get_contents( (string) $options['allow'] ), true );
 	}
+	// "@renamed": { "Old_Class": "New_Class" } compares a renamed test class with its old name.
+	$old = Junit_Report::rename_classes( $old, (array) ( $allow['@renamed'] ?? array() ) );
+	unset( $allow['@renamed'] );
 
 	$rows        = array();
 	$unexplained = 0;

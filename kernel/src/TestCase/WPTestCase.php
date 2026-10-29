@@ -9,8 +9,14 @@ use Uncanny_Owl\Wp_Test_Kernel\Boot;
  *
  * Boot::finish() aliases it to Codeception\TestCase\WPTestCase, so existing tests keep their
  * `extends` line while they move off Codeception.
+ *
+ * Keeps wp-browser's stub helpers ($this->make(), makeEmpty(), construct() and
+ * Codeception\Stub\Expected) through codeception/stub, a standalone library that registers
+ * each stub with PHPUnit so its expectations are verified like any mock's.
  */
 abstract class WPTestCase extends \WP_UnitTestCase {
+
+	use \Codeception\Test\Feature\Stub;
 
 	/**
 	 * Fail on unexpected _doing_it_wrong() / deprecation notices, as WordPress core's test case does.

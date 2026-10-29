@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5795e74b15b1ff1746707f21924de188",
+    "content-hash": "5320e0f2842d0633ab3ed78fa619275b",
     "packages": [
         {
             "name": "brianium/paratest",
@@ -98,6 +98,47 @@
                 }
             ],
             "time": "2026-10-22T06:15:12+00:00"
+        },
+        {
+            "name": "codeception/stub",
+            "version": "4.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Codeception/Stub.git",
+                "reference": "6305b97eaf6ea9bdaed29a5bd4d6f2948f577d8f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Codeception/Stub/zipball/6305b97eaf6ea9bdaed29a5bd4d6f2948f577d8f",
+                "reference": "6305b97eaf6ea9bdaed29a5bd4d6f2948f577d8f",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.1",
+                "phpunit/phpunit": "^8.4 | ^9.0 | ^10.0 | ^11 | ^12 | ^13"
+            },
+            "conflict": {
+                "codeception/codeception": "<5.0.6"
+            },
+            "require-dev": {
+                "consolidation/robo": "^4.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Codeception\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Flexible Stub wrapper for PHPUnit's Mock Builder",
+            "support": {
+                "issues": "https://github.com/Codeception/Stub/issues",
+                "source": "https://github.com/Codeception/Stub/tree/4.3.0"
+            },
+            "time": "2026-02-06T15:19:04+00:00"
         },
         {
             "name": "colinodell/json5",

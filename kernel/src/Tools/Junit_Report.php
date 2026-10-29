@@ -51,6 +51,26 @@ final class Junit_Report {
 	}
 
 	/**
+	 * Re-key tests whose class was renamed, so a renamed test compares with its old self.
+	 *
+	 * @param array<string, array{outcome: string, file: string, message: string}> $tests
+	 * @param array<string, string>                                                $renames Old short class name => new.
+	 *
+	 * @return array<string, array{outcome: string, file: string, message: string}>
+	 */
+	public static function rename_classes( array $tests, array $renames ) {
+
+		$renamed = array();
+		foreach ( $tests as $id => $test ) {
+			$class = strstr( $id, '::', true );
+			$key = isset( $renames[ $class ] ) ? $renames[ $class ] . substr( $id, strlen( $class ) ) : $id;
+			$renamed[ $key ] = $test;
+		}
+
+		return $renamed;
+	}
+
+	/**
 	 * "Class::method" plus a normalised data-set suffix, the same for both runners.
 	 *
 	 * @param SimpleXMLElement $case

@@ -66,4 +66,13 @@ class Junit_Report_Test extends TestCase {
 		$this->assertSame( array( '/b.php', '/a.php' ), Junit_Report::read( $file )['files'] );
 		unlink( $file );
 	}
+
+	public function test_a_renamed_class_compares_with_its_old_name() {
+		$old = $this->read( '<testsuites><testsuite><testcase name="test_x" class="Ns\\Usage_Reports_Tests"/><testcase name="test_y" class="Other_Test"/></testsuite></testsuites>' );
+
+		$this->assertSame(
+			array( 'Usage_Reports_Test::x', 'Other_Test::y' ),
+			array_keys( Junit_Report::rename_classes( $old, array( 'Usage_Reports_Tests' => 'Usage_Reports_Test' ) ) )
+		);
+	}
 }
