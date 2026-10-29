@@ -26,7 +26,7 @@ final class Cli {
 	/** Options that only change which mutants run: allowed, but the run becomes an inspection. */
 	const INSPECTION_OPTIONS = array( 'mutators', 'show-mutations', 'ignore-msi-with-no-mutations' );
 
-	const KNOWN_OPTIONS = array( 'plugin-path', 'config', 'project-dir', 'path', 'changed', 'advise', 'plan', 'update-baseline', 'create-baseline', 'shard', 'threads', 'coverage-options', 'format', 'base' );
+	const KNOWN_OPTIONS = array( 'plugin-path', 'config', 'project-dir', 'path', 'changed', 'advise', 'plan', 'update-baseline', 'create-baseline', 'report-unbaselined', 'shard', 'threads', 'coverage-options', 'format', 'base' );
 
 	/**
 	 * @param string[] $argv
@@ -138,7 +138,7 @@ final class Cli {
 
 			foreach ( $run['files'] as $file ) {
 				$verdicts[ $file ] = null === $result['stopped']
-					? self::judge( $scope, $baseline, $file, $result['tallies'][ $file ] ?? new Tally(), $creating )
+					? self::judge( $scope, $baseline, $file, $result['tallies'][ $file ] ?? new Tally(), $creating, isset( $options['report-unbaselined'] ) )
 					: array( 'status' => 'stopped', 'pass' => false, 'tally' => null, 'note' => $result['stopped'] );
 			}
 		}
@@ -190,10 +190,11 @@ final class Cli {
 	 * @param string   $file
 	 * @param Tally    $tally
 	 * @param bool     $creating
+	 * @param bool     $report_unbaselined A file with no floor yet is reported, not failed.
 	 *
 	 * @return array{status: string, pass: bool, tally: Tally, note: string}
 	 */
-	private static function judge( Scope $scope, Baseline $baseline, $file, Tally $tally, $creating ) {
+	private static function judge( Scope $scope, Baseline $baseline, $file, Tally $tally, $creating, $report_unbaselined = false ) {
 
 		if ( 0 === $tally->total() ) {
 			return array( 'status' => 'nothing', 'pass' => true, 'tally' => $tally, 'note' => 'nothing to mutate' );
@@ -204,8 +205,11 @@ final class Cli {
 
 		$floor = $baseline->floor( $file );
 		if ( null === $floor ) {
-			return $creating
-				? array( 'status' => 'debt', 'pass' => true, 'tally' => $tally, 'note' => 'first floor, under its target' )
+			if ( $creating ) {
+				return array( 'status' => 'debt', 'pass' => true, 'tally' => $tally, 'note' => 'first floor, under its target' );
+			}
+			return $report_unbaselined
+				? array( 'status' => 'unbaselined', 'pass' => true, 'tally' => $tally, 'note' => 'no floor yet, reported only (--report-unbaselined)' )
 				: array( 'status' => 'new', 'pass' => false, 'tally' => $tally, 'note' => 'new to the baseline and under its target' );
 		}
 

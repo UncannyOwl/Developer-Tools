@@ -100,4 +100,18 @@ class Mutate_Test extends TestCase {
 
 		$this->assertSame( array( $file => array( 6 ) ), Suppressions::unexplained( $this->root, array( $file ) ) );
 	}
+
+	public function test_a_file_without_a_floor_fails_unless_unbaselined_files_are_reported_only() {
+		$judge    = new ReflectionMethod( \Uncanny_Owl\Wp_Test_Kernel\Mutate\Cli::class, 'judge' );
+		$baseline = new Baseline( $this->root . '/baseline.php' );
+		$file     = 'src/app/Transports/Model_Context_Protocol/OAuth/Token_Manager.php';
+		$under    = Tally::of( 50, 50, 0 );
+
+		$strict = $judge->invoke( null, $this->scope(), $baseline, $file, $under, false );
+		$this->assertFalse( $strict['pass'], 'By default a file new to the baseline must reach its target.' );
+
+		$reported = $judge->invoke( null, $this->scope(), $baseline, $file, $under, false, true );
+		$this->assertTrue( $reported['pass'], '--report-unbaselined reports a file with no floor instead of failing it.' );
+		$this->assertSame( 'unbaselined', $reported['status'] );
+	}
 }

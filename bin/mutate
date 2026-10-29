@@ -9,6 +9,7 @@
  *   bin/mutate --advise              runs nothing: whether the branch calls for a run, and the command; exits 0
  *   --update-baseline                after a passing run, raise each floor the run beat; add a new file only at its target
  *   --create-baseline                record every file's score as its first floor (only when there is none)
+ *   --report-unbaselined             a file with no floor yet is reported, not failed (gate only what has a floor)
  *   --shard=i/N                      every Nth run of the plan, the ith
  *   --threads=N                      Infection threads (each gets its own kernel database)
  *   --coverage-options="..."         PHP options that turn a coverage driver on (or WP_TEST_KERNEL_COVERAGE_OPTIONS)
