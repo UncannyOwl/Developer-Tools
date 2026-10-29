@@ -56,6 +56,8 @@ final class Infection_Runner {
 		$this->write_phpunit_config( $dir, $run );
 		$this->write_infection_config( $dir, $run );
 
+		// --with-uncovered: Infection 0.35 skips code no test runs unless told otherwise, which would
+		// report an untested file as "nothing to mutate" and make the overall score equal the covered one.
 		// A coverage driver loaded through an ini scan directory reaches PHPUnit's process-isolated
 		// children too; `-d` options (coverage_options) reach only the initial run's own process.
 		$ini_dir = (string) ( getenv( 'WP_TEST_KERNEL_COVERAGE_INI_DIR' ) ?: $this->scope->get( 'coverage_ini_dir' ) );
@@ -63,7 +65,7 @@ final class Infection_Runner {
 
 		$filter  = implode( ',', $run['files'] );
 		$command = sprintf(
-			'cd %s && ' . $env . '%s vendor/bin/infection --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --no-progress --no-interaction --initial-tests-php-options=%s %s 2>&1',
+			'cd %s && ' . $env . '%s vendor/bin/infection --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --with-uncovered --no-progress --no-interaction --initial-tests-php-options=%s %s 2>&1',
 			escapeshellarg( $this->project_dir ),
 			escapeshellarg( PHP_BINARY ),
 			escapeshellarg( $dir . '/infection.json5' ),

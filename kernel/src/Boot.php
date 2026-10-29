@@ -38,6 +38,8 @@ final class Boot {
 
 		require_once dirname( __DIR__ ) . '/functions.php';
 
+		self::route_php_error_log( $config );
+
 		$snapshot = Snapshot::ensure( $config );
 		$db_name  = Worker_Database::prepare( $config, $snapshot );
 
@@ -95,6 +97,31 @@ final class Boot {
 			$loader->unregister();
 			$loader->register( true );
 		}
+	}
+
+	/**
+	 * Send PHP's own error log (what PHP prints for an error no handler took) to a file, the same on
+	 * every machine. Unset, CLI PHP writes it to stderr, and PHPUnit fails a process-isolated test whose
+	 * child wrote anything to stderr, such as a warning while WordPress boots; a php.ini that logs to
+	 * a file (Valet, MAMP) hides that. Warnings raised inside a test still reach PHPUnit's handler and
+	 * its report. WP_TEST_KERNEL_ERROR_LOG=stderr keeps PHP's default.
+	 *
+	 * @param Config $config
+	 *
+	 * @return void
+	 */
+	private static function route_php_error_log( Config $config ) {
+		if ( 'stderr' === getenv( 'WP_TEST_KERNEL_ERROR_LOG' ) ) {
+			return;
+		}
+
+		$dir = rtrim( (string) ( $config->get( 'output_dir' ) ?: $config->get( 'cache_dir' ) ), '/' );
+		if ( '' === $dir || ( ! is_dir( $dir ) && ! mkdir( $dir, 0777, true ) && ! is_dir( $dir ) ) ) {
+			return;
+		}
+
+		ini_set( 'log_errors', '1' ); // phpcs:ignore WordPress.PHP.IniSet.Risky -- test runs only.
+		ini_set( 'error_log', $dir . '/php-errors.log' ); // phpcs:ignore WordPress.PHP.IniSet.Risky -- test runs only.
 	}
 
 	/**
