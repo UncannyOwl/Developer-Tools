@@ -15,6 +15,10 @@ $wp_test_kernel_config = $GLOBALS['wp_test_kernel_config'];
 
 define( 'ABSPATH', $wp_test_kernel_config['wp_root'] );
 
+// Plugins load from the folder holding the plugin under test, which may be a checkout outside this
+// WordPress install (a worktree): that checkout is the copy under test.
+define( 'WP_PLUGIN_DIR', $wp_test_kernel_config['plugins_dir'] );
+
 define( 'DB_NAME', $wp_test_kernel_config['db_name'] );
 define( 'DB_USER', $wp_test_kernel_config['db_user'] );
 define( 'DB_PASSWORD', $wp_test_kernel_config['db_password'] );

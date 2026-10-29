@@ -27,6 +27,15 @@ final class Worker_Database {
 		}
 
 		$database = Database::from_config( $config );
+		if ( ! $database->claim( $name ) ) {
+			throw new \RuntimeException(
+				sprintf(
+					"Another test run is using the database %1\$s on this MySQL server: another terminal, an agent, or another checkout of this plugin. Restoring it now would wipe that run's data, so this run stops. Wait for the other run to finish, or give this run databases of its own: WP_TEST_KERNEL_DB_NAME=%2\$s_2 followed by your test command.",
+					$name,
+					$config->get( 'db_name' )
+				)
+			);
+		}
 		$database->recreate( $name );
 		$database->import( $name, $snapshot );
 
