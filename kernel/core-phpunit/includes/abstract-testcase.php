@@ -87,7 +87,9 @@ abstract class WP_UnitTestCase_Base extends PHPUnit_Adapter_TestCase {
 		$wpdb->show_errors     = (bool) \Uncanny_Owl\Wp_Test_Kernel\Boot::config()->get( 'show_db_errors' );
 		// uncanny-kernel: wp-browser's strict connection-id check removed; same as core.
 		$wpdb->check_connection( false );
-		ini_set( 'display_errors', 1 );
+		// uncanny-kernel: never on stdout, where a plugin's warning while it loads would make every later
+		// header() or setcookie() in a test warn "headers already sent" (see Boot::display_errors()).
+		ini_set( 'display_errors', \Uncanny_Owl\Wp_Test_Kernel\Boot::display_errors() );
 
 		$class = self::$calledClass ?? get_called_class();
 

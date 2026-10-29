@@ -273,13 +273,16 @@ if ( '1' !== getenv( 'WP_TESTS_SKIP_INSTALL' ) ) {
 	}
 }
 
+// uncanny-kernel: only core's own suite prints which mode it runs in (and how to switch with core's
+// own config file). A plugin suite prints nothing here: any output starts PHP's output, and every
+// later header() or setcookie() in a test then warns "headers already sent".
 if ( $multisite ) {
-	echo 'Running as multisite...' . PHP_EOL;
+	_wp_test_kernel_core_suite() && print( 'Running as multisite...' . PHP_EOL );
 	defined( 'MULTISITE' ) or define( 'MULTISITE', true );
 	defined( 'SUBDOMAIN_INSTALL' ) or define( 'SUBDOMAIN_INSTALL', false );
 	$GLOBALS['base'] = '/';
 } else {
-	echo 'Running as single site... To run multisite, use -c tests/phpunit/multisite.xml' . PHP_EOL;
+	_wp_test_kernel_core_suite() && print( 'Running as single site... To run multisite, use -c tests/phpunit/multisite.xml' . PHP_EOL );
 }
 unset( $multisite );
 
@@ -387,6 +390,11 @@ class WP_PHPUnit_Util_Getopt {
 					}
 					continue 2;
 			}
+		}
+
+		// uncanny-kernel: the notices below are about core's own test groups; a plugin suite has none.
+		if ( ! _wp_test_kernel_core_suite() ) {
+			return;
 		}
 
 		$skipped_groups = array_filter( $skipped_groups );
