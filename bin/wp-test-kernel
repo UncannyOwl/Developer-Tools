@@ -3,8 +3,14 @@
 /**
  * wp-test-kernel — helper commands for running WordPress tests on the Developer-Tools test kernel.
  *
- *   wp-test-kernel attributes <dir|file>... [--static-providers]
- *       Add PHPUnit attributes next to docblock tags (and make data providers public static).
+ *   wp-test-kernel attributes <dir|file>... [--static-providers] [--covers [--source=<dir>,...]]
+ *       Add PHPUnit attributes next to docblock tags (and make data providers public static). --covers
+ *       also turns @covers/@coversDefaultClass/@coversNothing into class-level coverage attributes
+ *       and removes those docblock lines. A method tag becomes its class (CoversMethod would credit
+ *       only that method's lines, not the private helpers it calls); a trait gets CoversTrait.
+ *       --source checks every target against what those directories declare: a class_alias()
+ *       name becomes its real class, and a target that does not exist, or is an interface, is
+ *       kept as a docblock line and reported.
  *   wp-test-kernel parity --old=<junit.xml> --new=<junit.xml> [--allow=<allowlist.json>] [--format=text|github|markdown]
  *       Compare per-test outcomes of two runs; exit 1 on unexplained differences.
  *   wp-test-kernel order --from=<junit.xml> --config=<phpunit.xml> --out=<phpunit.order.xml>
@@ -20,6 +26,7 @@ foreach ( array( __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autol
 
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Attribute_Adder;
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Junit_Report;
+use Uncanny_Owl\Wp_Test_Kernel\Tools\Source_Index;
 
 /**
  * @param string[] $argv
@@ -50,6 +57,9 @@ function wp_test_kernel_args( array $argv ) {
 function wp_test_kernel_attributes( array $paths, array $options ) {
 	$adder   = new Attribute_Adder();
 	$changed = 0;
+	if ( ! empty( $options['source'] ) && true !== $options['source'] ) {
+		$adder->use_source_index( Source_Index::build( array_filter( explode( ',', (string) $options['source'] ) ) ) );
+	}
 	$files   = array();
 
 	foreach ( $paths as $path ) {
@@ -67,7 +77,7 @@ function wp_test_kernel_attributes( array $paths, array $options ) {
 
 	sort( $files );
 	foreach ( $files as $file ) {
-		if ( $adder->process_file( $file, ! empty( $options['static-providers'] ) ) ) {
+		if ( $adder->process_file( $file, ! empty( $options['static-providers'] ), ! empty( $options['covers'] ) ) ) {
 			++$changed;
 		}
 	}
