@@ -65,6 +65,9 @@ final class Config {
 			'autoloader'         => null,
 			'profile'            => '',
 			'legacy_notices'     => false,
+			// Print WordPress database errors into the test output (core's test case does); otherwise
+			// they go to PHP's error log only.
+			'show_db_errors'     => false,
 			// Callables run after every test, once WordPress has rolled the test back: for a plugin's own
 			// in-process caches that outlive a rollback (the kernel cannot know them).
 			'after_each_test'    => array(),
@@ -92,6 +95,11 @@ final class Config {
 
 		if ( '1' === getenv( 'WP_MULTISITE' ) ) {
 			$values['multisite'] = true;
+		}
+
+		$show_db_errors = getenv( 'WP_TEST_KERNEL_SHOW_DB_ERRORS' );
+		if ( false !== $show_db_errors && '' !== $show_db_errors ) {
+			$values['show_db_errors'] = ( '1' === $show_db_errors );
 		}
 
 		// WP_TEST_KERNEL_LEGACY_NOTICES=1 / 0 overrides the plugin's choice either way.

@@ -81,7 +81,10 @@ abstract class WP_UnitTestCase_Base extends PHPUnit_Adapter_TestCase {
 		parent::set_up_before_class();
 
 		$wpdb->suppress_errors = false;
-		$wpdb->show_errors     = true;
+		// uncanny-kernel: database errors go to PHP's error log (tests/_output/php-errors.log), not into
+		// the test output; tests that query a missing table on purpose would otherwise print HTML into
+		// the progress line. WP_TEST_KERNEL_SHOW_DB_ERRORS=1 prints them, as core does.
+		$wpdb->show_errors     = (bool) \Uncanny_Owl\Wp_Test_Kernel\Boot::config()->get( 'show_db_errors' );
 		// uncanny-kernel: wp-browser's strict connection-id check removed; same as core.
 		$wpdb->check_connection( false );
 		ini_set( 'display_errors', 1 );

@@ -26,6 +26,7 @@ class Config_Test extends TestCase {
 		putenv( 'WP_MULTISITE' );
 		putenv( 'WP_TEST_KERNEL_DB_HOST' );
 		putenv( 'WP_TEST_KERNEL_PLUGINS_DIR' );
+		putenv( 'WP_TEST_KERNEL_SHOW_DB_ERRORS' );
 	}
 
 	/**
@@ -67,6 +68,13 @@ class Config_Test extends TestCase {
 		putenv( 'WP_TEST_KERNEL_PLUGINS_DIR=/srv/plugins/' );
 
 		$this->assertSame( '/srv/plugins', $this->config()->plugins_dir() );
+	}
+
+	public function test_database_errors_stay_out_of_the_test_output_unless_asked() {
+		$this->assertFalse( $this->config()->get( 'show_db_errors' ) );
+
+		putenv( 'WP_TEST_KERNEL_SHOW_DB_ERRORS=1' );
+		$this->assertTrue( $this->config()->get( 'show_db_errors' ) );
 	}
 
 	public function test_a_missing_wordpress_root_is_refused() {
