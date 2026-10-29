@@ -244,6 +244,11 @@ abstract class WP_UnitTestCase_Base extends PHPUnit_Adapter_TestCase {
 		$GLOBALS['wp_stylesheet_path'] = null;
 		$GLOBALS['wp_template_path']   = null;
 
+		// uncanny-kernel: rest_get_server() keeps its server in this global and core never clears it. A test
+		// that put one there (often holding only the routes it registered) hands it to every later test in
+		// the process, whose routes then answer 404. The next rest_get_server() builds a full one.
+		$GLOBALS['wp_rest_server'] = null;
+
 		$this->unregister_all_meta_keys();
 		remove_theme_support( 'html5' );
 		remove_filter( 'query', array( $this, '_create_temporary_tables' ) );
