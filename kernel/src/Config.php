@@ -94,7 +94,7 @@ final class Config {
 		$values['profile'] = (string) preg_replace( '/[^a-z0-9_]/', '', strtolower( (string) $values['profile'] ) );
 
 		if ( '' === $values['cache_dir'] ) {
-			$values['cache_dir'] = rtrim( (string) $values['plugin_root'], '/' ) . '/tests/kernel/.cache';
+			$values['cache_dir'] = rtrim( (string) $values['plugin_root'], '/' ) . '/tests/_output/kernel';
 		}
 
 		$config = new self( $values );

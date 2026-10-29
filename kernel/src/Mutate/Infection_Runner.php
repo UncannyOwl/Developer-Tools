@@ -18,8 +18,8 @@ final class Infection_Runner {
 	/** @var Scope */
 	private $scope;
 
-	/** @var string Absolute path of the tests/kernel project. */
-	private $kernel_dir;
+	/** @var string Absolute path of the project that holds vendor/ and the PHPUnit config (the plugin root). */
+	private $project_dir;
 
 	/** @var int */
 	private $threads;
@@ -29,13 +29,13 @@ final class Infection_Runner {
 
 	/**
 	 * @param Scope  $scope
-	 * @param string $kernel_dir
+	 * @param string $project_dir
 	 * @param int    $threads
 	 * @param string $coverage_options PHP options that turn a coverage driver on for the initial run.
 	 */
-	public function __construct( Scope $scope, $kernel_dir, $threads, $coverage_options ) {
+	public function __construct( Scope $scope, $project_dir, $threads, $coverage_options ) {
 		$this->scope            = $scope;
-		$this->kernel_dir       = rtrim( $kernel_dir, '/' );
+		$this->project_dir      = rtrim( $project_dir, '/' );
 		$this->threads          = max( 1, (int) $threads );
 		$this->coverage_options = (string) $coverage_options;
 	}
@@ -49,7 +49,7 @@ final class Infection_Runner {
 	 */
 	public function run( $index, array $run, array $extra_args = array() ) {
 
-		$dir = $this->kernel_dir . '/.cache/mutate/run-' . $index;
+		$dir = $this->project_dir . '/tests/_output/mutate/run-' . $index;
 		$this->reset_dir( $dir );
 
 		$root = $this->scope->root();
@@ -64,7 +64,7 @@ final class Infection_Runner {
 		$filter  = implode( ',', $run['files'] );
 		$command = sprintf(
 			'cd %s && ' . $env . '%s vendor/bin/infection --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --no-progress --no-interaction --initial-tests-php-options=%s %s 2>&1',
-			escapeshellarg( $this->kernel_dir ),
+			escapeshellarg( $this->project_dir ),
 			escapeshellarg( PHP_BINARY ),
 			escapeshellarg( $dir . '/infection.json5' ),
 			$this->threads,
@@ -102,7 +102,7 @@ final class Infection_Runner {
 	 * @return void
 	 */
 	private function write_phpunit_config( $dir, array $run ) {
-		$base = $this->kernel_dir . '/' . ( $this->scope->get( 'phpunit' ) ?: 'phpunit.xml' );
+		$base = $this->project_dir . '/' . ( $this->scope->get( 'phpunit' ) ?: 'phpunit.xml.dist' );
 		$doc  = new DOMDocument();
 		$doc->preserveWhiteSpace = false;
 		$doc->formatOutput       = true;
@@ -111,7 +111,7 @@ final class Infection_Runner {
 		}
 
 		$phpunit = $doc->documentElement;
-		$phpunit->setAttribute( 'bootstrap', $this->kernel_dir . '/' . $phpunit->getAttribute( 'bootstrap' ) );
+		$phpunit->setAttribute( 'bootstrap', $this->project_dir . '/' . $phpunit->getAttribute( 'bootstrap' ) );
 		$phpunit->setAttribute( 'cacheDirectory', $dir . '/phpunit-cache' );
 		$phpunit->removeAttribute( 'xsi:noNamespaceSchemaLocation' );
 
@@ -157,7 +157,7 @@ final class Infection_Runner {
 			'source'   => array( 'directories' => array_keys( $directories ) ),
 			'phpUnit'  => array(
 				'configDir'  => $dir,
-				'customPath' => $this->kernel_dir . '/vendor/bin/phpunit',
+				'customPath' => $this->project_dir . '/vendor/bin/phpunit',
 			),
 			'tmpDir'   => $dir . '/tmp',
 			'logs'     => array(

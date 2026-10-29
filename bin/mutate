@@ -3,7 +3,7 @@
 /**
  * bin/mutate — mutation testing of a plugin's core, judged per file (the platform's RB27 discipline).
  *
- *   bin/mutate                       every file in scope (tests/kernel/mutate.php)
+ *   bin/mutate                       every file in scope (tests/mutate.php)
  *   bin/mutate --changed[=<ref>]     in-scope files the branch adds or changes against <ref> (default: config `base`, else origin/pre-release)
  *   bin/mutate --path=a,b            those files or folders (plugin-relative)
  *   bin/mutate --advise              runs nothing: whether the branch calls for a run, and the command; exits 0

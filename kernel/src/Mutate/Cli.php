@@ -26,7 +26,7 @@ final class Cli {
 	/** Options that only change which mutants run: allowed, but the run becomes an inspection. */
 	const INSPECTION_OPTIONS = array( 'mutators', 'show-mutations', 'ignore-msi-with-no-mutations' );
 
-	const KNOWN_OPTIONS = array( 'plugin-path', 'config', 'kernel-dir', 'path', 'changed', 'advise', 'plan', 'update-baseline', 'create-baseline', 'shard', 'threads', 'coverage-options', 'format', 'base' );
+	const KNOWN_OPTIONS = array( 'plugin-path', 'config', 'project-dir', 'path', 'changed', 'advise', 'plan', 'update-baseline', 'create-baseline', 'shard', 'threads', 'coverage-options', 'format', 'base' );
 
 	/**
 	 * @param string[] $argv
@@ -50,7 +50,7 @@ final class Cli {
 		}
 
 		$root   = rtrim( (string) ( $options['plugin-path'] ?? getcwd() ), '/' );
-		$scope  = Scope::load( $root, (string) ( $options['config'] ?? 'tests/kernel/mutate.php' ) );
+		$scope  = Scope::load( $root, (string) ( $options['config'] ?? 'tests/mutate.php' ) );
 		$base   = (string) ( is_string( $options['changed'] ?? null ) ? $options['changed'] : ( $options['base'] ?? ( $scope->get( 'base' ) ?: 'origin/pre-release' ) ) );
 		$format = (string) ( $options['format'] ?? 'text' );
 
@@ -77,7 +77,7 @@ final class Cli {
 			$files = $scope->files();
 		}
 
-		$baseline   = new Baseline( $root . '/' . ( $scope->get( 'baseline' ) ?: 'tests/kernel/mutate-baseline.php' ) );
+		$baseline   = new Baseline( $root . '/' . ( $scope->get( 'baseline' ) ?: 'tests/mutate-baseline.php' ) );
 		$creating   = isset( $options['create-baseline'] );
 		$updating   = isset( $options['update-baseline'] );
 		$inspection = array_intersect( array_keys( $options ), self::INSPECTION_OPTIONS );
@@ -123,7 +123,7 @@ final class Cli {
 
 		$runner = new Infection_Runner(
 			$scope,
-			(string) ( $options['kernel-dir'] ?? $root . '/tests/kernel' ),
+			(string) ( $options['project-dir'] ?? $root ),
 			(int) ( $options['threads'] ?? ( $scope->get( 'threads' ) ?: 4 ) ),
 			(string) ( $options['coverage-options'] ?? ( getenv( 'WP_TEST_KERNEL_COVERAGE_OPTIONS' ) ?: (string) $scope->get( 'coverage_options' ) ) )
 		);

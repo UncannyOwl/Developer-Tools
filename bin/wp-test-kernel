@@ -184,6 +184,24 @@ function wp_test_kernel_order( array $options ) {
 	}
 	$suites->appendChild( $suite );
 
+	// The ordered config lives elsewhere: keep its other relative paths pointing where they did.
+	$config_dir = dirname( (string) realpath( (string) $options['config'] ) );
+	$rebase     = static function ( $path ) use ( $config_dir, $out_dir ) {
+		if ( '' === $path || '/' === $path[0] || preg_match( '#^[a-z][a-z0-9+.-]*://#i', $path ) ) {
+			return $path;
+		}
+		return wp_test_kernel_relative( $out_dir, $config_dir . '/' . $path );
+	};
+	$root = $config->documentElement;
+	foreach ( array( 'bootstrap', 'cacheDirectory', 'cacheResultFile', 'xsi:noNamespaceSchemaLocation' ) as $attribute ) {
+		if ( $root->hasAttribute( $attribute ) ) {
+			$root->setAttribute( $attribute, $rebase( $root->getAttribute( $attribute ) ) );
+		}
+	}
+	foreach ( ( new DOMXPath( $config ) )->query( '//source//directory | //source//file' ) as $node ) {
+		$node->nodeValue = $rebase( trim( (string) $node->nodeValue ) );
+	}
+
 	$config->save( (string) $options['out'] );
 	printf( "Wrote %s with %d files in run order.\n", $options['out'], count( $files ) );
 

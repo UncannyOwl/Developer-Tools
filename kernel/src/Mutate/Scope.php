@@ -10,7 +10,7 @@ use RuntimeException;
  * Ported from the Automator platform's tools/mutate discipline (RB27): core files only; the critical
  * path is held to 90 overall, every other core file to 75 overall and 80 covered. Never 100 —
  * equivalent mutants and defensive branches make 100 a target for tests of the implementation.
- * Read from the plugin's own config file (tests/kernel/mutate.php), the one place its scope is written.
+ * Read from the plugin's own config file (tests/mutate.php), the one place its scope is written.
  */
 final class Scope {
 

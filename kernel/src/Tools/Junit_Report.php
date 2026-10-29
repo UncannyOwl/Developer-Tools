@@ -62,8 +62,8 @@ final class Junit_Report {
 
 		$renamed = array();
 		foreach ( $tests as $id => $test ) {
-			$class = strstr( $id, '::', true );
-			$key = isset( $renames[ $class ] ) ? $renames[ $class ] . substr( $id, strlen( $class ) ) : $id;
+			$class           = strstr( $id, '::', true );
+			$key             = isset( $renames[ $class ] ) ? $renames[ $class ] . substr( $id, strlen( $class ) ) : $id;
 			$renamed[ $key ] = $test;
 		}
 

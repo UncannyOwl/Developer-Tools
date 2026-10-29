@@ -215,7 +215,16 @@ define( 'WP_TESTS_TABLE_PREFIX', $table_prefix );
 define( 'DIR_TESTDATA', __DIR__ . '/../data' );
 define( 'DIR_TESTROOT', realpath( dirname( __DIR__ ) ) );
 
-define( 'WP_LANG_DIR', realpath( DIR_TESTDATA . '/languages' ) );
+// uncanny-kernel: core's test data is not shipped, so a plugin suite gets a writable language folder
+// of its own (as wp-browser's data/languages was), never the WordPress install's wp-content/languages.
+if ( ! defined( 'WP_LANG_DIR' ) ) {
+	$_wp_test_kernel_lang_dir = rtrim( (string) \Uncanny_Owl\Wp_Test_Kernel\Boot::config()->get( 'cache_dir' ), '/' ) . '/languages';
+	if ( ! is_dir( $_wp_test_kernel_lang_dir ) ) {
+		mkdir( $_wp_test_kernel_lang_dir, 0777, true );
+	}
+	define( 'WP_LANG_DIR', $_wp_test_kernel_lang_dir );
+	unset( $_wp_test_kernel_lang_dir );
+}
 
 if ( defined( 'WP_RUN_CORE_TESTS' ) && WP_RUN_CORE_TESTS ) {
 	define( 'WP_PLUGIN_DIR', realpath( DIR_TESTDATA . '/plugins' ) );
