@@ -36,6 +36,12 @@ class Database_Test extends TestCase {
 		$this->assertSame( '', Database::advice( "ERROR 1064 (42000): You have an error in your SQL syntax", 'root', '127.0.0.1', '3306', 'automator_kernel' ) );
 	}
 
+	public function test_db_host_forms_wordpress_accepts(): void {
+		$this->assertSame( array( '127.0.0.1', '3306', '' ), Database::parse_host( '127.0.0.1' ) );
+		$this->assertSame( array( '127.0.0.1', '10011', '' ), Database::parse_host( '127.0.0.1:10011' ) );
+		$this->assertSame( array( 'localhost', '3306', '/Users/me/Library/Application Support/Local/run/abc/mysql/mysqld.sock' ), Database::parse_host( 'localhost:/Users/me/Library/Application Support/Local/run/abc/mysql/mysqld.sock' ), 'LocalWP connects through a socket.' );
+	}
+
 	public function test_a_second_session_cannot_claim_a_database_this_one_holds(): void {
 		$host = getenv( 'WP_TEST_KERNEL_DB_HOST' ) ?: '127.0.0.1:3306';
 		$user = getenv( 'WP_TEST_KERNEL_DB_USER' ) ?: 'root';

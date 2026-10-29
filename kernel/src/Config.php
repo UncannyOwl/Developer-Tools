@@ -25,7 +25,8 @@ final class Config {
 	 * Build the configuration from the plugin's bootstrap array plus environment variables.
 	 *
 	 * Environment overrides: WP_ROOT_FOLDER, WP_TEST_KERNEL_DB_HOST, WP_TEST_KERNEL_DB_USER,
-	 * WP_TEST_KERNEL_DB_PASSWORD, WP_TEST_KERNEL_DB_NAME, WP_TESTS_DOMAIN, WP_MULTISITE.
+	 * WP_TEST_KERNEL_DB_PASSWORD, WP_TEST_KERNEL_DB_NAME, WP_TEST_KERNEL_PLUGINS_DIR, WP_TESTS_DOMAIN,
+	 * WP_MULTISITE.
 	 *
 	 * @param array<string, mixed> $input
 	 *
@@ -36,6 +37,9 @@ final class Config {
 		$defaults = array(
 			'plugin_root'        => '',
 			'wp_root'            => '',
+			// Where WordPress loads plugins from; '' is the folder holding plugin_root, so a checkout
+			// outside the WordPress install (a worktree) is the copy under test.
+			'plugins_dir'        => '',
 			'plugins'            => array(),
 			'config_file'        => null,
 			'table_prefix'       => 'wptests_',
@@ -70,6 +74,7 @@ final class Config {
 			'db_user'     => 'WP_TEST_KERNEL_DB_USER',
 			'db_password' => 'WP_TEST_KERNEL_DB_PASSWORD',
 			'db_name'     => 'WP_TEST_KERNEL_DB_NAME',
+			'plugins_dir' => 'WP_TEST_KERNEL_PLUGINS_DIR',
 			'domain'      => 'WP_TESTS_DOMAIN',
 		);
 
@@ -144,6 +149,19 @@ final class Config {
 	}
 
 	/**
+	 * The folder WordPress loads plugins from: the one holding the plugin under test unless set, so a
+	 * checkout outside the WordPress install is the copy that runs, and the profile's other plugins
+	 * sit beside it.
+	 *
+	 * @return string
+	 */
+	public function plugins_dir() {
+		$dir = (string) $this->values['plugins_dir'];
+
+		return rtrim( '' === $dir ? dirname( $this->plugin_root() ) : $dir, '/' );
+	}
+
+	/**
 	 * @return string[]
 	 */
 	public function plugins() {
@@ -197,6 +215,7 @@ final class Config {
 	public function to_wordpress_config( $db_name ) {
 		return array(
 			'wp_root'      => $this->wp_root(),
+			'plugins_dir'  => $this->plugins_dir(),
 			'db_name'      => $db_name,
 			'db_host'      => $this->values['db_host'],
 			'db_user'      => $this->values['db_user'],

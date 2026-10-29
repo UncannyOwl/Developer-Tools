@@ -15,6 +15,9 @@ final class Database {
 	/** @var string */
 	private $port;
 
+	/** @var string Unix socket path from a host:/socket DB_HOST (LocalWP), else ''. */
+	private $socket;
+
 	/** @var string */
 	private $user;
 
@@ -39,12 +42,27 @@ final class Database {
 	 */
 	public function __construct( $db_host, $user, $password, $name_prefix = '' ) {
 
-		$parts             = explode( ':', (string) $db_host, 2 );
-		$this->host        = $parts[0];
-		$this->port        = isset( $parts[1] ) && ctype_digit( $parts[1] ) ? $parts[1] : '3306';
+		list( $this->host, $this->port, $this->socket ) = self::parse_host( $db_host );
+
 		$this->user        = (string) $user;
 		$this->password    = (string) $password;
 		$this->name_prefix = (string) $name_prefix;
+	}
+
+	/**
+	 * Host, port and socket from a WordPress DB_HOST: host, host:port or host:/path/to/socket.
+	 *
+	 * @param string $db_host
+	 *
+	 * @return array{0: string, 1: string, 2: string}
+	 */
+	public static function parse_host( $db_host ) {
+		$parts  = explode( ':', (string) $db_host, 2 );
+		$host   = '' === $parts[0] ? 'localhost' : $parts[0];
+		$rest   = $parts[1] ?? '';
+		$socket = '' !== $rest && '/' === $rest[0] ? $rest : '';
+
+		return array( $host, ctype_digit( $rest ) ? $rest : '3306', $socket );
 	}
 
 	/**
@@ -130,7 +148,7 @@ final class Database {
 
 		mysqli_report( MYSQLI_REPORT_OFF );
 		$connection = mysqli_init();
-		if ( false === $connection || ! @$connection->real_connect( $this->host, $this->user, $this->password, '', (int) $this->port ) ) {
+		if ( false === $connection || ! @$connection->real_connect( $this->host, $this->user, $this->password, '', (int) $this->port, '' === $this->socket ? null : $this->socket ) ) {
 			return true;
 		}
 
@@ -201,6 +219,10 @@ final class Database {
 	 * @return string
 	 */
 	private function connection_args() {
+		if ( '' !== $this->socket ) {
+			return sprintf( '--socket=%s -u %s', escapeshellarg( $this->socket ), escapeshellarg( $this->user ) );
+		}
+
 		return sprintf( '-h %s -P %s -u %s', escapeshellarg( $this->host ), escapeshellarg( $this->port ), escapeshellarg( $this->user ) );
 	}
 

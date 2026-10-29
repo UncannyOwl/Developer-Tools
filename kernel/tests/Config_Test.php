@@ -25,6 +25,7 @@ class Config_Test extends TestCase {
 		putenv( 'TEST_TOKEN' );
 		putenv( 'WP_MULTISITE' );
 		putenv( 'WP_TEST_KERNEL_DB_HOST' );
+		putenv( 'WP_TEST_KERNEL_PLUGINS_DIR' );
 	}
 
 	/**
@@ -54,6 +55,18 @@ class Config_Test extends TestCase {
 		putenv( 'WP_TEST_KERNEL_DB_HOST=db:3307' );
 
 		$this->assertSame( 'db:3307', $this->config()->get( 'db_host' ) );
+	}
+
+	public function test_plugins_load_from_the_folder_holding_the_plugin_under_test() {
+		$config = $this->config()->to_wordpress_config( 'x' );
+
+		$this->assertSame( dirname( __DIR__ ), $config['plugins_dir'], 'A checkout outside the WordPress install is the copy WordPress loads.' );
+	}
+
+	public function test_the_plugins_folder_can_be_set() {
+		putenv( 'WP_TEST_KERNEL_PLUGINS_DIR=/srv/plugins/' );
+
+		$this->assertSame( '/srv/plugins', $this->config()->plugins_dir() );
 	}
 
 	public function test_a_missing_wordpress_root_is_refused() {
