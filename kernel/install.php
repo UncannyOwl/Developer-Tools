@@ -42,8 +42,20 @@ foreach ( $wp_test_kernel_plugins as $wp_test_kernel_plugin ) {
 
 	$wp_test_kernel_result = activate_plugin( $wp_test_kernel_plugin, '', $wp_test_kernel_multisite, false );
 
+	// WordPress activates a plugin that prints during activation and only reports the output, as
+	// wp-admin does; so does the kernel (wp-browser ignored it), showing what was printed.
+	if ( is_wp_error( $wp_test_kernel_result ) && 'unexpected_output' === $wp_test_kernel_result->get_error_code() ) {
+		fwrite( STDERR, 'Note: ' . $wp_test_kernel_plugin . ' printed ' . strlen( (string) $wp_test_kernel_result->get_error_data() ) . ' characters while activating:' . PHP_EOL . wp_strip_all_tags( (string) $wp_test_kernel_result->get_error_data() ) . PHP_EOL );
+		continue;
+	}
+
 	if ( is_wp_error( $wp_test_kernel_result ) ) {
 		fwrite( STDERR, $wp_test_kernel_result->get_error_message() . PHP_EOL );
+		// unexpected_output carries what the plugin printed: show it, it is the whole diagnosis.
+		$wp_test_kernel_data = $wp_test_kernel_result->get_error_data();
+		if ( is_string( $wp_test_kernel_data ) && '' !== $wp_test_kernel_data ) {
+			fwrite( STDERR, $wp_test_kernel_data . PHP_EOL );
+		}
 		exit( 1 );
 	}
 }

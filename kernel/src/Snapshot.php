@@ -118,6 +118,10 @@ final class Snapshot {
 			if ( 0 !== $exit ) {
 				throw new RuntimeException( "Snapshot install failed:\n" . implode( "\n", $output ) );
 			}
+			$notes = strstr( implode( "\n", $output ), 'Note: ' );
+			if ( false !== $notes ) {
+				fwrite( STDERR, "wp-test-kernel snapshot:\n" . $notes . "\n" );
+			}
 
 			$temporary = $path . '.' . getmypid() . '.tmp';
 			$database->dump( $scratch, $temporary );
