@@ -11,11 +11,17 @@ This is the **Uncanny Automator Developer Tools** plugin - a centralized develop
 ## Architecture
 
 This is a **standalone development tools plugin** that provides:
-- **Code Quality Tools**: PHPCS, PHPMD, PHPCPD with Uncanny Owl coding standards
+- **Code Quality Tools**: PHPCS and PHPMD with Uncanny Owl coding standards
 - **CRAP Score Analysis**: Cyclomatic complexity and test coverage analysis  
 - **Cross-platform Scripts**: Windows/Unix compatible PR checking tools
-- **Testing Framework**: Codeception-based testing infrastructure
+- **WordPress test kernel** (`kernel/`, `bin/wp-test-kernel`): WordPress tests on PHPUnit 13, run by PHPUnit, ParaTest or Pest 5, one database per worker, booted from a cached snapshot
+- **Mutation testing** (`bin/mutate`, Infection) and **Plugin Check** (`bin/plugin-check.php`)
 - **Automated Workflows**: GitHub Actions for code quality and PR management
+
+### Versions
+
+- `main`: the test kernel. Development and CI need PHP 8.4; a consuming plugin's own PHP floor and runtime packages do not change. Automator Free and Pro require `dev-main`.
+- `1.x`: the Codeception 4 + wp-browser v3 (PHPUnit 9) toolset as `main` had it before the kernel (7b03368), for plugins whose tests still run on Codeception. They require `dev-1.x`. Fixes only; a plugin leaves `1.x` when its tests move to the kernel.
 
 The plugin operates on **other Uncanny Owl plugins** in the same WordPress installation, not on itself.
 
@@ -45,22 +51,18 @@ composer crap-score:pr
 
 # PHP Mess Detector
 composer phpmd
-
-# PHP Copy/Paste Detector
-composer phpcpd
 ```
 
 ### Testing
 ```bash
-# Run unit tests (excluding full coverage group)
+# The kernel's own tests (attributes, config and profiles, JUnit reports and parity, mutate)
+composer test:kernel
+
+# From a consuming plugin: its test scripts (unit-tests, unit-tests:parallel, mutate, ...) run the kernel
 composer unit-tests
-
-# Run all unit tests including full coverage
-composer unit-tests-full
-
-# Run tests with coverage report
-composer unit-tests:coverage
 ```
+
+A consuming plugin points PHPUnit's bootstrap at its own file, which calls the kernel's `Boot` with the plugin's profiles; Automator Free's `tests/bootstrap-wordpress.php` and its `docs/reference/testing.md` are the worked example.
 
 ### Integration lint
 ```bash
