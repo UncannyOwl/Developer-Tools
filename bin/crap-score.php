@@ -64,9 +64,9 @@ if (!file_exists($phpcpdBin)) {
 echo "=== CRAP Score Analysis ===\n";
 echo "Project root: $projectRootDir\n";
 echo "PHPMD binary: $phpmdBin (exists: " . (file_exists($phpmdBin) ? "Yes" : "No") . ")\n";
-echo "PHPCBF binary: $phpcpdBin (exists: " . (file_exists($phpcpdBin) ? "Yes" : "No") . ")\n";
 
-if (!file_exists($phpmdBin) || !file_exists($phpcpdBin)) {
+// phpcpd is not required: its only analysis call below is commented out.
+if (!file_exists($phpmdBin)) {
     echo "Error: Required binaries not found. Please run 'composer install' in the developer tools directory.\n";
     exit(1);
 }

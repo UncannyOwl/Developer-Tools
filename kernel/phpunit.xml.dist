@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kernel self-tests: plain PHPUnit 13, no WordPress or database needed. `composer test:kernel` -->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="../vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="../vendor/autoload.php"
+         cacheDirectory="../.phpunit.cache/kernel"
+         colors="true">
+	<testsuites>
+		<testsuite name="kernel">
+			<directory>tests</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>

@@ -3,7 +3,7 @@
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
          colors="true"
-         cacheResultFile=".phpunit.result.cache">
+         cacheDirectory=".phpunit.cache">
 	<testsuites>
 		<testsuite name="lint">
 			<directory>tests/lint</directory>

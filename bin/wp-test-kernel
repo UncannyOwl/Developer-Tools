@@ -1,0 +1,219 @@
+#!/usr/bin/env php
+<?php
+/**
+ * wp-test-kernel — helper commands for running WordPress tests on the Developer-Tools test kernel.
+ *
+ *   wp-test-kernel attributes <dir|file>... [--static-providers]
+ *       Add PHPUnit attributes next to docblock tags (and make data providers public static).
+ *   wp-test-kernel parity --old=<junit.xml> --new=<junit.xml> [--allow=<allowlist.json>] [--format=text|github|markdown]
+ *       Compare per-test outcomes of two runs; exit 1 on unexplained differences.
+ *   wp-test-kernel order --from=<junit.xml> --config=<phpunit.xml> --out=<phpunit.order.xml>
+ *       Write a PHPUnit config whose test suite lists files in the order the JUnit run executed them.
+ */
+
+foreach ( array( __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php' ) as $wp_test_kernel_autoload ) {
+	if ( is_readable( $wp_test_kernel_autoload ) ) {
+		require $wp_test_kernel_autoload;
+		break;
+	}
+}
+
+use Uncanny_Owl\Wp_Test_Kernel\Tools\Attribute_Adder;
+use Uncanny_Owl\Wp_Test_Kernel\Tools\Junit_Report;
+
+/**
+ * @param string[] $argv
+ *
+ * @return array{0: string[], 1: array<string, string|bool>}
+ */
+function wp_test_kernel_args( array $argv ) {
+	$positional = array();
+	$options    = array();
+	foreach ( array_slice( $argv, 2 ) as $arg ) {
+		if ( 0 === strpos( $arg, '--' ) ) {
+			$parts                = explode( '=', substr( $arg, 2 ), 2 );
+			$options[ $parts[0] ] = $parts[1] ?? true;
+			continue;
+		}
+		$positional[] = $arg;
+	}
+
+	return array( $positional, $options );
+}
+
+/**
+ * @param string[]                   $paths
+ * @param array<string, string|bool> $options
+ *
+ * @return int
+ */
+function wp_test_kernel_attributes( array $paths, array $options ) {
+	$adder   = new Attribute_Adder();
+	$changed = 0;
+	$files   = array();
+
+	foreach ( $paths as $path ) {
+		if ( is_file( $path ) ) {
+			$files[] = $path;
+			continue;
+		}
+		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $path, FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $file ) {
+			if ( 'php' === $file->getExtension() ) {
+				$files[] = $file->getPathname();
+			}
+		}
+	}
+
+	sort( $files );
+	foreach ( $files as $file ) {
+		if ( $adder->process_file( $file, ! empty( $options['static-providers'] ) ) ) {
+			++$changed;
+		}
+	}
+
+	ksort( $adder->counts );
+	printf( "Files scanned: %d, changed: %d\n", count( $files ), $changed );
+	foreach ( $adder->counts as $name => $count ) {
+		printf( "  %-26s %d\n", $name, $count );
+	}
+	foreach ( $adder->notes as $note ) {
+		echo '  note: ', $note, PHP_EOL;
+	}
+
+	return 0;
+}
+
+/**
+ * @param array<string, string|bool> $options
+ *
+ * @return int
+ */
+function wp_test_kernel_parity( array $options ) {
+	if ( empty( $options['old'] ) || empty( $options['new'] ) ) {
+		fwrite( STDERR, "parity needs --old=<junit.xml> --new=<junit.xml>\n" );
+		return 2;
+	}
+
+	$old   = Junit_Report::read( (string) $options['old'] )['tests'];
+	$new   = Junit_Report::read( (string) $options['new'] )['tests'];
+	$allow = array();
+	if ( ! empty( $options['allow'] ) && is_readable( (string) $options['allow'] ) ) {
+		$allow = (array) json_decode( (string) file_get_contents( (string) $options['allow'] ), true );
+	}
+
+	$rows        = array();
+	$unexplained = 0;
+	foreach ( array_unique( array_merge( array_keys( $old ), array_keys( $new ) ) ) as $id ) {
+		$before = $old[ $id ]['outcome'] ?? 'missing';
+		$after  = $new[ $id ]['outcome'] ?? 'missing';
+		if ( $before === $after ) {
+			continue;
+		}
+		$reason = $allow[ $id ] ?? null;
+		if ( null === $reason ) {
+			++$unexplained;
+		}
+		$rows[] = array(
+			'id'      => $id,
+			'old'     => $before,
+			'new'     => $after,
+			'reason'  => $reason,
+			'file'    => $new[ $id ]['file'] ?? ( $old[ $id ]['file'] ?? '' ),
+			'message' => $new[ $id ]['message'] ?? ( $old[ $id ]['message'] ?? '' ),
+		);
+	}
+
+	$format = (string) ( $options['format'] ?? 'text' );
+	$total  = count( array_unique( array_merge( array_keys( $old ), array_keys( $new ) ) ) );
+
+	if ( 'markdown' === $format ) {
+		printf( "### Parity: %d tests, %d differences, %d unexplained\n\n", $total, count( $rows ), $unexplained );
+		if ( ! empty( $rows ) ) {
+			echo "| Test | Old | New | Reason |\n|---|---|---|---|\n";
+			foreach ( $rows as $row ) {
+				printf( "| `%s` | %s | %s | %s |\n", $row['id'], $row['old'], $row['new'], $row['reason'] ?? '**unexplained** ' . str_replace( '|', '\|', $row['message'] ) );
+			}
+		}
+	} else {
+		foreach ( $rows as $row ) {
+			if ( 'github' === $format && null === $row['reason'] ) {
+				printf( "::error file=%s,title=Parity difference::%s: %s → %s %s\n", $row['file'], $row['id'], $row['old'], $row['new'], $row['message'] );
+				continue;
+			}
+			printf( "%s %s: %s → %s%s\n", null === $row['reason'] ? 'UNEXPLAINED' : 'allowed    ', $row['id'], $row['old'], $row['new'], null === $row['reason'] ? '  ' . $row['message'] : '  (' . $row['reason'] . ')' );
+		}
+		printf( "%d tests compared, %d differences, %d unexplained\n", $total, count( $rows ), $unexplained );
+	}
+
+	return 0 === $unexplained ? 0 : 1;
+}
+
+/**
+ * @param array<string, string|bool> $options
+ *
+ * @return int
+ */
+function wp_test_kernel_order( array $options ) {
+	foreach ( array( 'from', 'config', 'out' ) as $required ) {
+		if ( empty( $options[ $required ] ) ) {
+			fwrite( STDERR, "order needs --from=<junit.xml> --config=<phpunit.xml> --out=<phpunit.order.xml>\n" );
+			return 2;
+		}
+	}
+
+	$files  = Junit_Report::read( (string) $options['from'] )['files'];
+	$config = new DOMDocument();
+	$config->preserveWhiteSpace = false;
+	$config->formatOutput       = true;
+	$config->load( (string) $options['config'] );
+
+	$suites = $config->getElementsByTagName( 'testsuites' )->item( 0 );
+	while ( $suites && $suites->firstChild ) {
+		$suites->removeChild( $suites->firstChild );
+	}
+
+	$suite = $config->createElement( 'testsuite' );
+	$suite->setAttribute( 'name', 'ordered' );
+	$out_dir = dirname( (string) realpath( dirname( (string) $options['out'] ) ) . '/x' );
+	foreach ( $files as $file ) {
+		$suite->appendChild( $config->createElement( 'file', wp_test_kernel_relative( $out_dir, $file ) ) );
+	}
+	$suites->appendChild( $suite );
+
+	$config->save( (string) $options['out'] );
+	printf( "Wrote %s with %d files in run order.\n", $options['out'], count( $files ) );
+
+	return 0;
+}
+
+/**
+ * @param string $from_dir
+ * @param string $to_file
+ *
+ * @return string
+ */
+function wp_test_kernel_relative( $from_dir, $to_file ) {
+	$from = explode( '/', trim( $from_dir, '/' ) );
+	$to   = explode( '/', trim( $to_file, '/' ) );
+	while ( ! empty( $from ) && ! empty( $to ) && $from[0] === $to[0] ) {
+		array_shift( $from );
+		array_shift( $to );
+	}
+
+	return str_repeat( '../', count( $from ) ) . implode( '/', $to );
+}
+
+list( $wp_test_kernel_positional, $wp_test_kernel_options ) = wp_test_kernel_args( $argv );
+
+switch ( $argv[1] ?? '' ) {
+	case 'attributes':
+		exit( wp_test_kernel_attributes( $wp_test_kernel_positional, $wp_test_kernel_options ) );
+	case 'parity':
+		exit( wp_test_kernel_parity( $wp_test_kernel_options ) );
+	case 'order':
+		exit( wp_test_kernel_order( $wp_test_kernel_options ) );
+	default:
+		fwrite( STDERR, "Usage: wp-test-kernel attributes|parity|order (see the header of this file)\n" );
+		exit( 2 );
+}
