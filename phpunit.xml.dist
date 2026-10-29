@@ -11,5 +11,8 @@
 		<testsuite name="metadata">
 			<directory>tests/metadata</directory>
 		</testsuite>
+		<testsuite name="plugin-check">
+			<directory>tests/plugin-check</directory>
+		</testsuite>
 	</testsuites>
 </phpunit>
