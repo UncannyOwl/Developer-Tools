@@ -1,0 +1,19 @@
+{
+	"slug": "foo-plugin",
+	"mode": "update",
+	"exclude_checks": [
+		{ "check": "plugin_updater", "reason": "fixture: shows the shape of an excluded check" }
+	],
+	"ignore": [
+		{
+			"code": "wp_function_not_compatible_with_requires_wp",
+			"message": "Function \"str_*()\" requires WordPress 5.9.0*",
+			"reason": "fixture: src/global-functions.php polyfills str_contains, str_starts_with and str_ends_with"
+		},
+		{
+			"code": "hidden_files",
+			"path": "logs/.htaccess",
+			"reason": "fixture: the deny-all rule that keeps the log folder private"
+		}
+	]
+}

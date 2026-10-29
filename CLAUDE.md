@@ -80,6 +80,24 @@ composer test:lint
 ```
 Every finding carries a rule id from `.claude/skills/integration-rules` in the Automator repo and a check id. Checks live in `bin/lint/checks.php`; add a fixture case under `tests/fixtures/lint/` and a test before adding a check.
 
+### Plugin Check (WordPress.org)
+```bash
+# Build the plugin's release zip (config `build`), run Plugin Check on it, fail on errors the baseline does not hold
+php bin/plugin-check.php --plugin-path /path/to/free --build --wp-path /path/to/wordpress
+
+# Check a zip you already built; GitHub annotations plus a Markdown step summary; checks split over 4 processes
+php bin/plugin-check.php --plugin-path . --zip zip-package/foo.zip --wp-path … --jobs 4 --format=github --summary-file "$GITHUB_STEP_SUMMARY"
+
+# Accept the current errors as the baseline (after fixing some, or after bumping plugin-check)
+php bin/plugin-check.php --plugin-path . --build --wp-path … --update-baseline
+
+# Gate a saved run again without WordPress (what the tests do)
+php bin/plugin-check.php --plugin-path . --results plugin-check-results.json
+
+# From a consuming plugin: WP_PATH=/path/to/wordpress composer plugin-check
+```
+Needs a WordPress install with the `plugin-check` plugin active; the checked plugin need not be installed there, so only static checks run. The plugin keeps `.plugin-check/config.json` (slug, mode, build command, zip path, ignores and excluded checks, each with a `reason`) and `.plugin-check/baseline.json` (errors by path, code and message, counted; no line numbers, so moved code keeps its entry). A new ERROR exits 1; warnings, ignored rows and baselined errors never fail; `--strict` also fails when baselined errors no longer occur. Pure logic is in `bin/plugin-check/functions.php`; tests in `tests/plugin-check/` with fixtures in `tests/fixtures/plugin-check/`.
+
 ### Cross-platform PR Tools
 ```bash
 # Check PR code quality (PHPCS)
@@ -106,6 +124,8 @@ automator-dev-tools/
 │   ├── stamp-version.php       # Bleeding-edge version stamper
 │   ├── lint-integration.php    # Integration lint: house rules by id (R-…/L-…), Free + Pro
 │   ├── lint/                   # The lint's context, checks, fixes and reporters
+│   ├── plugin-check.php        # WordPress.org Plugin Check on the release zip, gated by a baseline
+│   ├── plugin-check/           # The gate's pure functions: normalise, ignore, baseline, render
 │   ├── scan-hooks.php          # Hook documentation scanner (ripgrep + PHP)
 │   ├── enrich-hooks.py         # Hook documentation AI enricher (Python)
 │   └── sync-hooks.php          # Hook documentation WordPress sync
@@ -113,7 +133,9 @@ automator-dev-tools/
 │   └── hook-docs-toolchain.md  # Full hook docs pipeline guide
 ├── tests/
 │   ├── lint/                   # PHPUnit tests for the integration lint
-│   └── fixtures/lint/          # A clean and a dirty fixture integration (Free + Pro)
+│   ├── plugin-check/           # PHPUnit tests for the Plugin Check gate (saved results, no WordPress)
+│   ├── fixtures/lint/          # A clean and a dirty fixture integration (Free + Pro)
+│   └── fixtures/plugin-check/  # A plugin's .plugin-check/ config and baseline, and saved results
 ├── build/                      # Testing and build artifacts
 ├── .env.example                # AI provider config template
 └── vendor/                     # Composer dependencies
