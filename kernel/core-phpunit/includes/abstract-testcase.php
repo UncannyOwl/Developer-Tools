@@ -17,6 +17,14 @@ require_once __DIR__ . '/trac.php';
  * All WordPress unit tests should inherit from this class.
  */
 abstract class WP_UnitTestCase_Base extends PHPUnit_Adapter_TestCase {
+
+	/**
+	 * uncanny-kernel: temporary tables the current test created, dropped in tear_down().
+	 *
+	 * @var array<string, true>
+	 */
+	protected static $wp_test_kernel_temporary_tables = array();
+
 	protected static $forced_tickets   = array();
 	protected $expected_deprecated     = array();
 	protected $caught_deprecated       = array();
@@ -176,6 +184,15 @@ abstract class WP_UnitTestCase_Base extends PHPUnit_Adapter_TestCase {
 		global $wpdb, $wp_the_query, $wp_query, $wp;
 
 		$wpdb->query( 'ROLLBACK' );
+
+		// uncanny-kernel: a temporary table a test created (its CREATE TABLE, rewritten below) outlives the
+		// test and the rollback, and shadows the real table of that name for every later test in the
+		// process (a view restored over it then fails: "View's SELECT refers to a temporary table").
+		// End them with the test.
+		foreach ( array_keys( self::$wp_test_kernel_temporary_tables ) as $wp_test_kernel_table ) {
+			$wpdb->query( 'DROP TEMPORARY TABLE IF EXISTS `' . str_replace( '`', '', $wp_test_kernel_table ) . '`' );
+		}
+		self::$wp_test_kernel_temporary_tables = array();
 
 		if ( is_multisite() ) {
 			while ( ms_is_switched() ) {
@@ -526,7 +543,12 @@ abstract class WP_UnitTestCase_Base extends PHPUnit_Adapter_TestCase {
 	 */
 	public function _create_temporary_tables( $query ) {
 		if ( 0 === strpos( trim( $query ), 'CREATE TABLE' ) ) {
-			return substr_replace( trim( $query ), 'CREATE TEMPORARY TABLE', 0, 12 );
+			$query = substr_replace( trim( $query ), 'CREATE TEMPORARY TABLE', 0, 12 );
+			// uncanny-kernel: remember it, so tear_down() can drop it.
+			if ( preg_match( '/^CREATE TEMPORARY TABLE\s+(?:IF NOT EXISTS\s+)?`?([^\s`(]+)`?/i', $query, $matches ) ) {
+				self::$wp_test_kernel_temporary_tables[ $matches[1] ] = true;
+			}
+			return $query;
 		}
 		return $query;
 	}
