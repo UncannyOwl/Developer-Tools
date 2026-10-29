@@ -1,0 +1,16 @@
+{
+	"plugin_check_version": "2.1.0",
+	"total": 3,
+	"errors": {
+		"src/a.php": {
+			"WordPress.Security.EscapeOutput.OutputNotEscaped": {
+				"All output should be run through an escaping function, found '$x'.": 2
+			}
+		},
+		"src/b.php": {
+			"missing_direct_file_access_protection": {
+				"PHP file should prevent direct access.": 1
+			}
+		}
+	}
+}

@@ -1,0 +1,52 @@
+[
+ {
+  "file": "/tmp/stage/foo-plugin/src/a.php",
+  "line": 10,
+  "column": 5,
+  "type": "ERROR",
+  "code": "WordPress.Security.EscapeOutput.OutputNotEscaped",
+  "message": "All output should be run through an escaping function, found '$x'.",
+  "docs": "",
+  "severity": 5
+ },
+ {
+  "file": "/tmp/stage/foo-plugin/src/a.php",
+  "line": 30,
+  "column": 1,
+  "type": "WARNING",
+  "code": "WordPress.DB.DirectDatabaseQuery.DirectQuery",
+  "message": "Use of a direct database call is discouraged.",
+  "docs": "",
+  "severity": 5
+ },
+ {
+  "file": "/tmp/stage/foo-plugin/src/b.php",
+  "line": 0,
+  "column": 0,
+  "type": "ERROR",
+  "code": "missing_direct_file_access_protection",
+  "message": "PHP file should prevent direct access.",
+  "docs": "",
+  "severity": 5
+ },
+ {
+  "file": "/tmp/stage/foo-plugin/src/c.php",
+  "line": 7,
+  "column": 9,
+  "type": "ERROR",
+  "code": "wp_function_not_compatible_with_requires_wp",
+  "message": "Function \"str_contains()\" requires WordPress 5.9.0, but your plugin minimum supported version is WordPress 5.8.0.",
+  "docs": "",
+  "severity": 5
+ },
+ {
+  "file": "/tmp/stage/foo-plugin/logs/.htaccess",
+  "line": 0,
+  "column": 0,
+  "type": "ERROR",
+  "code": "hidden_files",
+  "message": "Hidden files are not permitted.",
+  "docs": "",
+  "severity": 5
+ }
+]

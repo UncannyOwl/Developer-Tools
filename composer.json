@@ -11,31 +11,32 @@
         }
     ],
     "require": {
-        "symfony/string": "^6.0",
-        "lucatume/wp-browser": "^3.7",
-        "codeception/module-asserts": "^1.3",
-        "codeception/module-phpbrowser": "^1.0",
-        "codeception/module-webdriver": "^1.4",
-        "codeception/module-db": "^1.2",
-        "codeception/module-filesystem": "^1.0",
-        "codeception/module-cli": "^1.1",
-        "codeception/util-universalframework": "^1.0",
+        "php": "^8.4",
+        "symfony/string": "^6.0 || ^7.0 || ^8.0",
         "vlucas/phpdotenv": "^5.6",
         "uocs/uncanny-owl-coding-standards": "dev-main",
         "phpmd/phpmd": "^2.15",
-        "sebastian/phpcpd": "^6.0.0",
-        "phpunit/php-code-coverage": "^9.2",
-        "phpunit/phpunit": "^9.6.34",
+        "phpunit/phpunit": "^13.4",
+        "pestphp/pest": "^5.3",
+        "infection/infection": "^0.35.8",
         "composer/composer": "^2.9.3",
-        "behat/gherkin": "^4.9 <4.10",
-        "phpbench/phpbench": "^1.2"
+        "phpbench/phpbench": "^1.2",
+        "codeception/stub": "^4.3",
+        "wp-cli/wp-cli": "^2.12"
+    },
+    "autoload": {
+        "psr-4": {
+            "Uncanny_Owl\\Wp_Test_Kernel\\": "kernel/src/"
+        }
     },
     "config": {
         "sort-packages": false,
         "optimize-autoloader": true,
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true,
-            "phpstan/extension-installer": true
+            "phpstan/extension-installer": true,
+            "pestphp/pest-plugin": true,
+            "infection/extension-installer": true
         }
     },
     "bin": [
@@ -44,12 +45,11 @@
         "bin/pr-code-check.php",
         "bin/scan-hooks.php",
         "bin/enrich-hooks.py",
-        "bin/sync-hooks.php"
+        "bin/sync-hooks.php",
+        "bin/wp-test-kernel",
+        "bin/mutate"
     ],
     "scripts": {
-        "unit-tests": "php ./vendor/bin/codecept run wpunit --skip-group Full_Coverage",
-        "unit-tests-full": "php ./vendor/bin/codecept run wpunit",
-        "unit-tests:coverage": "php ./vendor/bin/codecept run wpunit --coverage --coverage-html --xml",
         "phpcs": "./vendor/bin/phpcs -s --standard=Uncanny-Automator --warning-severity=1",
         "phpcsOnSave": "./vendor/bin/phpcs -s -v --standard=Uncanny-Automator --warning-severity=1 --report=full",
         "phpcbf": "./vendor/bin/phpcbf -s --standard=Uncanny-Automator",
@@ -58,11 +58,12 @@
         "crap-score": "@php bin/crap-score.php",
         "crap-score:pr": "@php bin/crap-score.php --pr",
         "phpmd": "./vendor/bin/phpmd . text cleancode,codesize,controversial,design,naming,unusedcode --exclude vendor,tests,node_modules",
-        "phpcpd": "./vendor/bin/phpcpd . --exclude vendor --exclude tests --exclude node_modules",
         "stamp-version": "@php bin/stamp-version.php",
         "stamp-since": "@php bin/stamp-since.php",
         "lint:integration": "@php bin/lint-integration.php",
+        "plugin-check": "@php bin/plugin-check.php",
         "test:lint": "./vendor/bin/phpunit --no-coverage",
+        "test:kernel": "./vendor/bin/phpunit --no-coverage -c kernel/phpunit.xml.dist",
         "post-install-cmd": [
             "@php -r \"file_exists('bin/pr-code-check') && chmod(realpath('bin/pr-code-check'), 0755);\"",
             "@php -r \"file_exists('bin/pr-code-check.php') && chmod(realpath('bin/pr-code-check.php'), 0755);\"",
