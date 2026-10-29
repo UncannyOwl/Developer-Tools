@@ -176,6 +176,9 @@ function wp_test_kernel_order( array $options ) {
 		$suites->removeChild( $suites->firstChild );
 	}
 
+	// The ordered suite replaces the config's suites, so a default suite named there would select nothing.
+	$config->documentElement->removeAttribute( 'defaultTestSuite' );
+
 	$suite = $config->createElement( 'testsuite' );
 	$suite->setAttribute( 'name', 'ordered' );
 	$out_dir = dirname( (string) realpath( dirname( (string) $options['out'] ) ) . '/x' );

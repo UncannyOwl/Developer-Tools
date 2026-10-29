@@ -116,6 +116,8 @@ final class Infection_Runner {
 		$phpunit->setAttribute( 'bootstrap', $this->project_dir . '/' . $phpunit->getAttribute( 'bootstrap' ) );
 		$phpunit->setAttribute( 'cacheDirectory', $dir . '/phpunit-cache' );
 		$phpunit->removeAttribute( 'xsi:noNamespaceSchemaLocation' );
+		// The run's suite replaces the base config's suites, so a default suite named there would select nothing.
+		$phpunit->removeAttribute( 'defaultTestSuite' );
 
 		foreach ( array( 'testsuites', 'source', 'coverage' ) as $tag ) {
 			while ( $node = $doc->getElementsByTagName( $tag )->item( 0 ) ) {
