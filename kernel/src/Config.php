@@ -24,9 +24,10 @@ final class Config {
 	/**
 	 * Build the configuration from the plugin's bootstrap array plus environment variables.
 	 *
-	 * Environment overrides: WP_ROOT_FOLDER, WP_TEST_KERNEL_DB_HOST, WP_TEST_KERNEL_DB_USER,
-	 * WP_TEST_KERNEL_DB_PASSWORD, WP_TEST_KERNEL_DB_NAME, WP_TEST_KERNEL_PLUGINS_DIR, WP_TESTS_DOMAIN,
-	 * WP_MULTISITE.
+	 * Environment overrides: WP_ROOT_FOLDER, WP_TEST_KERNEL_WP_VERSION, WP_TEST_KERNEL_DB_HOST,
+	 * WP_TEST_KERNEL_DB_USER, WP_TEST_KERNEL_DB_PASSWORD, WP_TEST_KERNEL_DB_NAME,
+	 * WP_TEST_KERNEL_PLUGINS_DIR, WP_TESTS_DOMAIN, WP_MULTISITE. WP_TEST_KERNEL_DOWNLOADS sets where
+	 * WordPress releases are kept.
 	 *
 	 * @param array<string, mixed> $input
 	 *
@@ -36,7 +37,10 @@ final class Config {
 
 		$defaults = array(
 			'plugin_root'        => '',
+			// A WordPress install to test with; '' is the kernel's own WordPress, release wp_version.
 			'wp_root'            => '',
+			// The wordpress.org release the kernel's own WordPress is, such as 7.1.4.
+			'wp_version'         => '',
 			// Where WordPress loads plugins from; '' is the folder holding plugin_root, so a checkout
 			// outside the WordPress install (a worktree) is the copy under test.
 			'plugins_dir'        => '',
@@ -61,6 +65,9 @@ final class Config {
 			'autoloader'         => null,
 			'profile'            => '',
 			'legacy_notices'     => false,
+			// Print WordPress database errors into the test output (core's test case does); otherwise
+			// they go to PHP's error log only.
+			'show_db_errors'     => false,
 			// Callables run after every test, once WordPress has rolled the test back: for a plugin's own
 			// in-process caches that outlive a rollback (the kernel cannot know them).
 			'after_each_test'    => array(),
@@ -70,6 +77,7 @@ final class Config {
 
 		$overrides = array(
 			'wp_root'     => 'WP_ROOT_FOLDER',
+			'wp_version'  => 'WP_TEST_KERNEL_WP_VERSION',
 			'db_host'     => 'WP_TEST_KERNEL_DB_HOST',
 			'db_user'     => 'WP_TEST_KERNEL_DB_USER',
 			'db_password' => 'WP_TEST_KERNEL_DB_PASSWORD',
@@ -87,6 +95,11 @@ final class Config {
 
 		if ( '1' === getenv( 'WP_MULTISITE' ) ) {
 			$values['multisite'] = true;
+		}
+
+		$show_db_errors = getenv( 'WP_TEST_KERNEL_SHOW_DB_ERRORS' );
+		if ( false !== $show_db_errors && '' !== $show_db_errors ) {
+			$values['show_db_errors'] = ( '1' === $show_db_errors );
 		}
 
 		// WP_TEST_KERNEL_LEGACY_NOTICES=1 / 0 overrides the plugin's choice either way.
@@ -116,8 +129,12 @@ final class Config {
 	 */
 	private function validate() {
 
-		if ( '' === $this->wp_root() || ! is_readable( $this->wp_root() . 'wp-settings.php' ) ) {
-			throw new RuntimeException( 'WordPress not found at "' . $this->wp_root() . '". Set wp_root or WP_ROOT_FOLDER.' );
+		if ( $this->uses_kernel_wordpress() ) {
+			if ( 1 !== preg_match( '/^\d+\.\d+(\.\d+)?$/', (string) $this->values['wp_version'] ) ) {
+				throw new RuntimeException( 'No WordPress to test with: set wp_version (a wordpress.org release such as 7.1.4) for the kernel\'s own WordPress, or wp_root / WP_ROOT_FOLDER to a WordPress install.' );
+			}
+		} elseif ( ! is_readable( $this->wp_root() . 'wp-settings.php' ) ) {
+			throw new RuntimeException( 'WordPress not found at "' . $this->wp_root() . '". Point WP_ROOT_FOLDER at a WordPress install, or leave it unset to use the kernel\'s own WordPress.' );
 		}
 
 		if ( '' === $this->plugin_root() || ! is_dir( $this->plugin_root() ) ) {
@@ -135,10 +152,49 @@ final class Config {
 	}
 
 	/**
-	 * @return string WordPress root with a trailing slash.
+	 * @return string WordPress root with a trailing slash: the named install, or the kernel's own
+	 *                WordPress, one copy per checkout in the machine's downloads folder. Never inside
+	 *                the checkout: code that tells WordPress, plugins and themes apart by path would
+	 *                read core files under the plugins folder as the plugin's.
 	 */
 	public function wp_root() {
+		if ( $this->uses_kernel_wordpress() ) {
+			$checkout = substr( md5( (string) ( realpath( $this->plugin_root() ) ?: $this->plugin_root() ) ), 0, 10 );
+
+			return $this->downloads_dir() . '/wordpress-' . $this->values['wp_version'] . '-' . $checkout . '/';
+		}
+
 		return rtrim( (string) $this->values['wp_root'], '/' ) . '/';
+	}
+
+	/**
+	 * Whether the tests run on the kernel's own WordPress (no install named).
+	 *
+	 * @return bool
+	 */
+	public function uses_kernel_wordpress() {
+		return '' === trim( (string) $this->values['wp_root'] );
+	}
+
+	/**
+	 * Where wordpress.org releases are kept, once per machine: WP_TEST_KERNEL_DOWNLOADS, else
+	 * $XDG_CACHE_HOME/wp-test-kernel, else ~/.cache/wp-test-kernel.
+	 *
+	 * @return string
+	 */
+	public function downloads_dir() {
+		$dir = getenv( 'WP_TEST_KERNEL_DOWNLOADS' );
+		if ( false !== $dir && '' !== $dir ) {
+			return rtrim( $dir, '/' );
+		}
+
+		$cache = getenv( 'XDG_CACHE_HOME' );
+		if ( false === $cache || '' === $cache ) {
+			$home  = getenv( 'HOME' );
+			$cache = ( false === $home || '' === $home ? sys_get_temp_dir() : $home ) . '/.cache';
+		}
+
+		return rtrim( $cache, '/' ) . '/wp-test-kernel';
 	}
 
 	/**

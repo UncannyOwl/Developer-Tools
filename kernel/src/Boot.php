@@ -40,6 +40,11 @@ final class Boot {
 
 		self::route_php_error_log( $config );
 
+		// A PHPUnit child process (process isolation) finds its worker's database already restored.
+		self::$isolated_child = ( getenv( Worker_Database::READY_ENV ) === $config->worker_db_name() );
+		ini_set( 'display_errors', self::display_errors() ); // phpcs:ignore WordPress.PHP.IniSet.Risky -- test runs only.
+
+		Wordpress_Core::ensure( $config );
 		$snapshot = Snapshot::ensure( $config );
 		$db_name  = Worker_Database::prepare( $config, $snapshot );
 
@@ -65,6 +70,25 @@ final class Boot {
 		require_once dirname( __DIR__ ) . '/core-phpunit/yoast-phpunit-polyfills-autoload-stub.php';
 
 		return dirname( __DIR__ ) . '/core-phpunit/includes/bootstrap.php';
+	}
+
+	/**
+	 * Whether this process is a PHPUnit child (process isolation) of a test worker.
+	 *
+	 * @var bool
+	 */
+	private static $isolated_child = false;
+
+	/**
+	 * Where PHP displays errors. Never stdout: output there makes every later header() or setcookie()
+	 * in a test warn "headers already sent". The main process uses stderr; a child process displays
+	 * nothing, because PHPUnit reports any stderr from an isolated test as an error. Either way PHP
+	 * logs every error to tests/_output/php-errors.log.
+	 *
+	 * @return string A display_errors value.
+	 */
+	public static function display_errors() {
+		return self::$isolated_child ? '0' : 'stderr';
 	}
 
 	/**

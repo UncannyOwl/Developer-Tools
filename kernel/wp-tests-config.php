@@ -35,6 +35,10 @@ define( 'WP_PHP_BINARY', PHP_BINARY );
 define( 'WPLANG', '' );
 
 defined( 'WP_DEBUG' ) || define( 'WP_DEBUG', true );
+// null: wp_debug_mode() leaves display_errors as the kernel set it (stderr). WordPress's default (true)
+// would display errors on stdout, and a plugin's warning while it loads would then make every later
+// header() or setcookie() in a test warn "headers already sent".
+defined( 'WP_DEBUG_DISPLAY' ) || define( 'WP_DEBUG_DISPLAY', null );
 
 if ( ! empty( $wp_test_kernel_config['config_file'] ) ) {
 	require_once $wp_test_kernel_config['config_file'];
