@@ -11,9 +11,11 @@
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Uncanny_Owl\Wp_Test_Kernel\Mutate\Cli;
+use Uncanny_Owl\Wp_Test_Kernel\Mutate\Coverage_Targets;
 use Uncanny_Owl\Wp_Test_Kernel\Mutate\Infection_Runner;
 
 #[CoversClass( Infection_Runner::class )]
+#[CoversClass( Coverage_Targets::class )]
 final class Mutate_Infection_Test extends TestCase {
 
 	/** @var string The fixture plugin, copied for this test. */
@@ -79,5 +81,13 @@ final class Mutate_Infection_Test extends TestCase {
 		$this->assertStringNotContainsString( 'STOPPED', $output, 'A normal test run passes with this warning on stderr, so the initial run must too.' );
 		$this->assertNotEmpty( $this->mutants() );
 		$this->assertStringContainsString( 'Asset file not found', (string) file_get_contents( $this->root . '/tests/_output/mutate/run-1/initial-tests.err' ), 'The warning is kept for the reader.' );
+	}
+
+	public function test_tests_that_cover_classes_outside_the_run_neither_stop_it_nor_get_them_mutated(): void {
+		$output = $this->mutate( 'src/Shelf/Shelf.php' );
+
+		$this->assertStringNotContainsString( 'STOPPED', $output, 'Label_Test, beside Shelf_Test, covers Label: a valid target in the plugin\'s <source>.' );
+		$this->assertSame( array( 'src/Shelf/Shelf.php' ), array_values( array_unique( array_column( $this->mutants(), 'file' ) ) ), 'Only the run\'s file is mutated.' );
+		$this->assertNotContains( 'uncovered', array_column( $this->mutants(), 'status' ), 'Shelf_Test\'s coverage of Shelf counts (PHPUnit drops a test\'s coverage when one of its targets is invalid).' );
 	}
 }

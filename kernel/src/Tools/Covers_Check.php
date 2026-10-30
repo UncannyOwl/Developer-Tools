@@ -193,11 +193,13 @@ final class Covers_Check {
 	}
 
 	/**
+	 * A coverage attribute's class argument: `Name::class` or a class-name string.
+	 *
 	 * @param Node\Expr|null $arg
 	 *
 	 * @return string
 	 */
-	private static function class_name( $arg ) {
+	public static function class_name( $arg ) {
 		if ( $arg instanceof ClassConstFetch && $arg->class instanceof Name ) {
 			return $arg->class->toString();
 		}
@@ -216,7 +218,7 @@ final class Covers_Check {
 	 *
 	 * @return string|null
 	 */
-	private static function path( $arg, $dir ) {
+	public static function path( $arg, $dir ) {
 		if ( $arg instanceof String_ ) {
 			return $arg->value;
 		}

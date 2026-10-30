@@ -3,16 +3,17 @@
 namespace Uncanny_Owl\Wp_Test_Kernel\Mutate;
 
 use DOMDocument;
+use DOMElement;
 use RuntimeException;
 
 /**
  * Runs Infection for one plan run: the run's files mutated, judged only by the run's tests.
  *
- * Writes a PHPUnit config holding just those tests (and a coverage source of just those files) and an
- * Infection config beside it, runs the run's tests once with coverage (the initial run), then has
- * Infection mutate the run's files against that coverage and reads its JSON log. Infection drives
- * PHPUnit 13 directly, runs only the tests covering each mutated line, and gives each thread its own
- * TEST_TOKEN, so each thread gets its own kernel database.
+ * Writes a PHPUnit config holding just those tests and an Infection config beside it, runs the run's
+ * tests once with coverage (the initial run), then has Infection mutate the run's files against that
+ * coverage and reads its JSON log. Infection drives PHPUnit 13 directly, runs only the tests covering
+ * each mutated line, and gives each thread its own TEST_TOKEN, so each thread gets its own kernel
+ * database.
  *
  * A run is judged as the plugin's own test run judges a test:
  *
@@ -20,8 +21,13 @@ use RuntimeException;
  *   warning while WordPress boots, a snapshot note) goes to a file. Infection runs no initial run of
  *   its own: it stops one at the first byte on stderr, so a warning that a normal run only prints
  *   ended the whole run.
+ * - The coverage source holds the run's files and every file its tests name as a coverage target, as
+ *   the plugin's <source> does; Infection mutates only the run's files.
  */
 final class Infection_Runner {
+
+	/** <source> attributes that read which files are the plugin's own: with one on, the source stays whole. */
+	const FIRST_PARTY_ATTRIBUTES = array( 'restrictNotices', 'restrictWarnings', 'ignoreSelfDeprecations', 'ignoreDirectDeprecations', 'ignoreIndirectDeprecations' );
 
 	/** @var Scope */
 	private $scope;
@@ -34,6 +40,9 @@ final class Infection_Runner {
 
 	/** @var string */
 	private $coverage_options;
+
+	/** @var Coverage_Targets|false|null False when the plugin's config declares no <source>; null until read. */
+	private $coverage_targets = null;
 
 	/**
 	 * @param Scope  $scope
@@ -168,7 +177,7 @@ final class Infection_Runner {
 	 * @return void
 	 */
 	private function write_phpunit_config( $dir, array $run ) {
-		$base = $this->project_dir . '/' . ( $this->scope->get( 'phpunit' ) ?: 'phpunit.xml.dist' );
+		$base = $this->base_config_path();
 		$doc  = new DOMDocument();
 		$doc->preserveWhiteSpace = false;
 		$doc->formatOutput       = true;
@@ -177,11 +186,16 @@ final class Infection_Runner {
 		}
 
 		$phpunit = $doc->documentElement;
-		$phpunit->setAttribute( 'bootstrap', $this->project_dir . '/' . $phpunit->getAttribute( 'bootstrap' ) );
+		if ( '' !== $phpunit->getAttribute( 'bootstrap' ) ) {
+			$phpunit->setAttribute( 'bootstrap', Coverage_Targets::absolute( $phpunit->getAttribute( 'bootstrap' ), dirname( $base ) ) );
+		}
 		$phpunit->setAttribute( 'cacheDirectory', $dir . '/phpunit-cache' );
 		$phpunit->removeAttribute( 'xsi:noNamespaceSchemaLocation' );
 		// The run's suite replaces the base config's suites, so a default suite named there would select nothing.
 		$phpunit->removeAttribute( 'defaultTestSuite' );
+
+		$base_source = $doc->getElementsByTagName( 'source' )->item( 0 );
+		$base_source = $base_source instanceof DOMElement ? $base_source->cloneNode( true ) : null;
 
 		// The initial run writes the coverage Infection reads; the plugin's own reports and logs would
 		// overwrite files outside the run.
@@ -200,15 +214,115 @@ final class Infection_Runner {
 		$suites->appendChild( $suite );
 		$phpunit->appendChild( $suites );
 
-		$source  = $doc->createElement( 'source' );
-		$include = $doc->createElement( 'include' );
-		foreach ( $run['files'] as $file ) {
-			$include->appendChild( $doc->createElement( 'file', $this->scope->root() . '/' . $file ) );
-		}
-		$source->appendChild( $include );
-		$phpunit->appendChild( $source );
+		$phpunit->appendChild( $this->source_element( $doc, $base_source, dirname( $base ), $run ) );
 
 		$doc->save( $dir . '/phpunit.xml' );
+	}
+
+	/**
+	 * The run's coverage source: the plugin's <source> with its settings, holding the run's files and
+	 * every file the run's tests name as a coverage target.
+	 *
+	 * When the plugin's <source> sets an attribute that reads which files are its own (restrictWarnings,
+	 * ignoreIndirectDeprecations, ...), narrowing it would change which warnings and deprecations count,
+	 * so it is kept whole (paths made absolute), at the cost of a larger coverage report.
+	 *
+	 * @param DOMDocument                             $doc
+	 * @param DOMElement|null                         $base_source A copy of the plugin's <source>.
+	 * @param string                                  $base_dir
+	 * @param array{files: string[], tests: string[]} $run
+	 *
+	 * @return DOMElement
+	 */
+	private function source_element( DOMDocument $doc, $base_source, $base_dir, array $run ) {
+		$source = $doc->createElement( 'source' );
+		$whole  = false;
+
+		if ( null !== $base_source ) {
+			foreach ( iterator_to_array( $base_source->attributes ) as $attribute ) {
+				$value = 'baseline' === $attribute->name ? Coverage_Targets::absolute( $attribute->value, $base_dir ) : $attribute->value;
+				$source->setAttribute( $attribute->name, $value );
+				if ( in_array( $attribute->name, self::FIRST_PARTY_ATTRIBUTES, true ) && 'true' === strtolower( trim( $attribute->value ) ) ) {
+					$whole = true;
+				}
+			}
+			foreach ( iterator_to_array( $base_source->childNodes ) as $child ) {
+				if ( ! $child instanceof DOMElement ) {
+					continue;
+				}
+				$is_list = in_array( $child->tagName, array( 'include', 'exclude' ), true );
+				if ( $is_list && ! $whole ) {
+					continue;
+				}
+				$copy = $doc->importNode( $child, true );
+				if ( $is_list ) {
+					foreach ( $copy->childNodes as $entry ) {
+						if ( $entry instanceof DOMElement ) {
+							$entry->nodeValue = Coverage_Targets::absolute( trim( $entry->textContent ), $base_dir );
+						}
+					}
+				}
+				$source->appendChild( $copy );
+			}
+		}
+
+		if ( $whole ) {
+			return $source;
+		}
+
+		$files = array();
+		foreach ( $run['files'] as $file ) {
+			$path           = $this->scope->root() . '/' . $file;
+			$real           = realpath( $path );
+			$files[ $path ] = false === $real ? $path : $real;
+		}
+		$targets = $this->coverage_targets();
+		if ( $targets instanceof Coverage_Targets ) {
+			$tests = array_map(
+				function ( $test ) {
+					return $this->scope->root() . '/' . $test;
+				},
+				$run['tests']
+			);
+			foreach ( $targets->files_for( $tests ) as $file ) {
+				$files[ $file ] = $file;
+			}
+		}
+		$files = array_unique( array_values( $files ) );
+		sort( $files );
+
+		$include = $doc->createElement( 'include' );
+		foreach ( $files as $file ) {
+			$include->appendChild( $doc->createElement( 'file', $file ) );
+		}
+		$source->insertBefore( $include, $source->firstChild );
+
+		return $source;
+	}
+
+	/**
+	 * The plugin's <source>, read once for every run of this invocation.
+	 *
+	 * @return Coverage_Targets|false
+	 */
+	private function coverage_targets() {
+		if ( null === $this->coverage_targets ) {
+			$base = $this->base_config_path();
+			$doc  = new DOMDocument();
+			$doc->load( $base );
+			$source = $doc->getElementsByTagName( 'source' )->item( 0 );
+
+			$this->coverage_targets = $source instanceof DOMElement ? Coverage_Targets::from_source( $source, dirname( $base ) ) : false;
+		}
+
+		return $this->coverage_targets;
+	}
+
+	/**
+	 * @return string
+	 */
+	private function base_config_path() {
+		return $this->project_dir . '/' . ( $this->scope->get( 'phpunit' ) ?: 'phpunit.xml.dist' );
 	}
 
 	/**
