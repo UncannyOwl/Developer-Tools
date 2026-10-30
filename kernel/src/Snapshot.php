@@ -8,10 +8,23 @@ use RuntimeException;
  * A database dump of a fresh WordPress install with the profile's plugins activated.
  *
  * Built once per cache key, then restored into every worker database. The key covers the WordPress
- * version, the plugin list, the files that define the plugin's schema, and the kernel version, so a
- * schema bump rebuilds it without a manual reset.
+ * version, the plugin list, the files that define the plugin's schema, the kernel version and the
+ * installer's own files, so a schema bump or an installer fix rebuilds it without a manual reset.
  */
 final class Snapshot {
+
+	/**
+	 * The files that build a snapshot, relative to kernel/.
+	 *
+	 * @var string[]
+	 */
+	const INSTALLER_FILES = array(
+		'install.php',
+		'network-activate.php',
+		'activate-plugins.php',
+		'wp-tests-config.php',
+		'core-phpunit/includes/install.php',
+	);
 
 	/**
 	 * Return the snapshot file for this configuration, building it first if needed.
@@ -70,8 +83,13 @@ final class Snapshot {
 			'wordpress' => self::wordpress_version( $config ),
 			'profile'   => $config->profile(),
 			'settings'  => $config->to_wordpress_config( '' ),
+			'installer' => array(),
 			'files'     => array(),
 		);
+
+		foreach ( self::INSTALLER_FILES as $file ) {
+			$parts['installer'][ $file ] = sha1_file( dirname( __DIR__ ) . '/' . $file );
+		}
 
 		foreach ( (array) $config->get( 'snapshot_key_files' ) as $file ) {
 			$parts['files'][ $file ] = is_readable( $file ) ? sha1_file( $file ) : 'missing';
