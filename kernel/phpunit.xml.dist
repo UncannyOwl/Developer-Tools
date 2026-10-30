@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Kernel self-tests: plain PHPUnit 13, no WordPress or database needed. `composer test:kernel` -->
+<!-- Kernel self-tests: plain PHPUnit 13. The database and snapshot tests need MySQL and are skipped without it; the snapshot tests install the kernel's own WordPress (downloaded once per machine). `composer test:kernel` -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="../vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="../vendor/autoload.php"

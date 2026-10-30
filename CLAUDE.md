@@ -55,7 +55,8 @@ composer phpmd
 
 ### Testing
 ```bash
-# The kernel's own tests (attributes, config and profiles, JUnit reports and parity, mutate)
+# The kernel's own tests (attributes, config and profiles, JUnit reports and parity, mutate, and snapshots,
+# single site and multisite, which need MySQL and are skipped without it)
 composer test:kernel
 
 # From a consuming plugin: its test scripts (unit-tests, unit-tests:parallel, mutate, ...) run the kernel
