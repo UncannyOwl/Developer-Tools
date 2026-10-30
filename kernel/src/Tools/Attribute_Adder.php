@@ -404,6 +404,22 @@ final class Attribute_Adder {
 		if ( empty( $found ) ) {
 			return;
 		}
+		// Without @coversDefaultClass, "::name" was a global function to PHPUnit. When no such function
+		// exists but the class-level tags name exactly one class that has the method, the tag meant
+		// that class's method.
+		$header_class = '';
+		if ( '' === $default && null !== $this->index ) {
+			$named = array();
+			foreach ( $found as list( $tag, $value, $index, $keep, $node ) ) {
+				if ( 'covers' === $tag && $node === $class && false === strpos( $value, '::' ) ) {
+					$resolved = $this->index->find_class( $this->resolve_class( $value, $context ) );
+					if ( null !== $resolved ) {
+						$named[ $resolved ] = true;
+					}
+				}
+			}
+			$header_class = 1 === count( $named ) ? (string) key( $named ) : '';
+		}
 
 		$classes   = array();
 		$functions = array();
@@ -429,7 +445,8 @@ final class Attribute_Adder {
 				continue;
 			}
 
-			$target = $this->coverage_target( (string) preg_replace( '/\(\)$/', '', $value ), $value, $default, $context, $file, $index );
+			$bare   = (string) preg_replace( '/\(\)$/', '', $value );
+			$target = $this->coverage_target( $bare, $value, '' !== $default ? $default : $this->header_default( $bare, $header_class, $file, $index ), $context, $file, $index );
 			if ( null !== $target && 'function' !== $target[0] && null !== $this->index && 'interface' === $this->index->kind_of( $target[1] ) ) {
 				$this->notes[] = sprintf( '%s:%d @covers %s — %s is an interface and holds no code; name the class the test runs — kept', $file, $index + 1, $value, $target[1] );
 				$target        = null;
@@ -482,6 +499,30 @@ final class Attribute_Adder {
 		foreach ( $nodes as $node ) {
 			$this->remove_emptied_docblock( $node, $lines, $removals );
 		}
+	}
+
+	/**
+	 * The class a "::name" tag belongs to when the test has no @coversDefaultClass: the one class its
+	 * class-level tags name, if that class has the method and no function of that name exists.
+	 *
+	 * @param string $target
+	 * @param string $header_class
+	 * @param string $file
+	 * @param int    $index
+	 *
+	 * @return string The class, or '' for PHPUnit's reading (a global function).
+	 */
+	private function header_default( $target, $header_class, $file, $index ) {
+		if ( '' === $header_class || 0 !== strpos( $target, '::' ) ) {
+			return '';
+		}
+		$name = substr( $target, 2 );
+		if ( null !== $this->index->find_function( $name ) || ! $this->index->has_method( $header_class, $name ) ) {
+			return '';
+		}
+		$this->notes[] = sprintf( '%s:%d @covers %s has no @coversDefaultClass; it is a method of %s, the class the test covers', $file, $index + 1, $target, $header_class );
+
+		return $header_class;
 	}
 
 	/**
@@ -572,6 +613,10 @@ final class Attribute_Adder {
 		if ( null !== $real && null !== $this->index->find_class( $real ) ) {
 			$this->notes[] = sprintf( '%s:%d %s is a class_alias() of %s — the real class used', $file, $index + 1, $class, $real );
 			return (string) $this->index->find_class( $real );
+		}
+		if ( $this->index->in_context_only( $class ) ) {
+			$this->notes[] = sprintf( '%s:%d %s is declared outside the source directories (a parent plugin\'s class), so it cannot be a target of these tests — kept', $file, $index + 1, $class );
+			return null;
 		}
 		$named = $this->index->classes_named( $class );
 		if ( 1 === count( $named ) ) {

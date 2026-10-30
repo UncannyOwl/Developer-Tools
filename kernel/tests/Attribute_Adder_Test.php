@@ -175,6 +175,48 @@ class Attribute_Adder_Test extends TestCase {
 		$this->assertStringContainsString( 'is an interface and holds no code', $notes );
 	}
 
+	public function test_a_method_tag_without_a_default_class_belongs_to_the_one_class_the_test_covers() {
+		$src = sys_get_temp_dir() . '/attr-src-' . uniqid();
+		mkdir( $src );
+		file_put_contents( $src . '/a.php', "<?php\nnamespace Plugin;\nclass Helpers { public function form_config() {} }\nfunction shared() {}\n" );
+
+		$adder = new Attribute_Adder();
+		$adder->use_source_index( Source_Index::build( array( $src ) ) );
+		file_put_contents( $this->file, "<?php\n/**\n * @covers \\Plugin\\Helpers\n */\nclass R_Test {\n\t/**\n\t * @covers ::form_config\n\t * @covers ::Plugin\\shared\n\t * @covers ::gone\n\t */\n\tpublic function test_a() {}\n}\n" );
+		$adder->process_file( $this->file, false, true );
+		$result = (string) file_get_contents( $this->file );
+		$notes  = implode( "\n", $adder->notes );
+		exec( 'rm -rf ' . escapeshellarg( $src ) );
+
+		$this->assertSame( 1, substr_count( $result, 'CoversClass( \\Plugin\\Helpers::class )' ) );
+		$this->assertStringNotContainsString( '@covers ::form_config', $result, 'The method of the covered class converts.' );
+		$this->assertStringContainsString( 'it is a method of \\Plugin\\Helpers', $notes );
+		$this->assertStringContainsString( "CoversFunction( 'Plugin\\\\shared' )", $result, 'A function of that name keeps PHPUnit\'s reading.' );
+		$this->assertStringContainsString( '@covers ::gone', $result, 'A method the class lacks stays for a fix by hand.' );
+	}
+
+	public function test_context_classes_count_for_inheritance_and_are_never_targets() {
+		$base  = sys_get_temp_dir() . '/attr-base-' . uniqid();
+		$addon = sys_get_temp_dir() . '/attr-addon-' . uniqid();
+		mkdir( $base );
+		mkdir( $addon );
+		file_put_contents( $base . '/a.php', "<?php\nnamespace Core;\nabstract class Trigger { public function register_trigger() {} }\n" );
+		file_put_contents( $addon . '/b.php', "<?php\nnamespace Addon;\nclass Joined extends \\Core\\Trigger {}\n" );
+
+		$adder = new Attribute_Adder();
+		$adder->use_source_index( Source_Index::build( array( $addon ), array( $base ) ) );
+		file_put_contents( $this->file, "<?php\n/**\n * @coversDefaultClass \\Addon\\Joined\n */\nclass S_Test {\n\t/**\n\t * @covers ::register_trigger\n\t * @covers \\Core\\Trigger\n\t */\n\tpublic function test_a() {}\n}\n" );
+		$adder->process_file( $this->file, false, true );
+		$result = (string) file_get_contents( $this->file );
+		$notes  = implode( "\n", $adder->notes );
+		exec( 'rm -rf ' . escapeshellarg( $base ) . ' ' . escapeshellarg( $addon ) );
+
+		$this->assertStringContainsString( 'CoversClass( \\Addon\\Joined::class )', $result, 'A method inherited from the parent plugin exists.' );
+		$this->assertStringNotContainsString( 'CoversClass( \\Core\\Trigger', $result );
+		$this->assertStringContainsString( '@covers \\Core\\Trigger', $result, "The parent plugin's class stays for a fix by hand." );
+		$this->assertStringContainsString( 'declared outside the source directories', $notes );
+	}
+
 	public function test_coverage_conversion_runs_once() {
 		$code  = "<?php\n/**\n * @covers \\Foo::bar\n */\nclass F_Test {\n}\n";
 		$first = $this->process( $code, true );

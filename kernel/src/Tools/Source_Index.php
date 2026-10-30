@@ -22,6 +22,9 @@ final class Source_Index {
 	/** @var array<string, array{name: string, kind: string, methods: array<string, string>, parent: string, traits: string[]}> lowercase FQCN => class, trait, interface or enum */
 	private $classes = array();
 
+	/** @var array<string, array{name: string, kind: string, methods: array<string, string>, parent: string, traits: string[]}> lowercase FQCN => a class from the context directories: read for inheritance only, never a target */
+	private $context = array();
+
 	/** @var array<string, string> lowercase alias => the real FQCN (from class_alias() calls) */
 	private $aliases = array();
 
@@ -32,11 +35,33 @@ final class Source_Index {
 	private $short = array();
 
 	/**
-	 * @param string[] $dirs Directories (or files) to index.
+	 * @param string[] $dirs    Directories (or files) whose classes and functions can be coverage targets.
+	 * @param string[] $context Directories whose classes are read only to follow inheritance (an add-on's
+	 *                          parent plugin): their methods count, the classes themselves are never targets.
 	 *
 	 * @return self
 	 */
-	public static function build( array $dirs ) {
+	public static function build( array $dirs, array $context = array() ) {
+		$index = new self();
+		foreach ( $context as $dir ) {
+			$scan = self::scan( array( $dir ) );
+			$index->context = array_merge( $index->context, $scan->classes );
+		}
+		$scan              = self::scan( $dirs );
+		$index->classes    = $scan->classes;
+		$index->aliases    = $scan->aliases;
+		$index->functions  = $scan->functions;
+		$index->short      = $scan->short;
+
+		return $index;
+	}
+
+	/**
+	 * @param string[] $dirs
+	 *
+	 * @return self
+	 */
+	private static function scan( array $dirs ) {
 		$index  = new self();
 		$parser = ( new ParserFactory() )->createForNewestSupportedVersion();
 		$finder = new NodeFinder();
@@ -179,6 +204,37 @@ final class Source_Index {
 	}
 
 	/**
+	 * Whether any class, trait, interface or enum is declared in this namespace or one below it.
+	 *
+	 * @param string $namespace
+	 *
+	 * @return bool
+	 */
+	public function has_namespace( $namespace ) {
+		$prefix = strtolower( trim( $namespace, '\\' ) ) . '\\';
+		foreach ( array_keys( $this->classes ) as $key ) {
+			if ( 0 === strpos( $key, $prefix ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether a name is declared only in the context directories (so it cannot be a target here).
+	 *
+	 * @param string $class
+	 *
+	 * @return bool
+	 */
+	public function in_context_only( $class ) {
+		$key = strtolower( ltrim( $class, '\\' ) );
+
+		return ! isset( $this->classes[ $key ] ) && isset( $this->context[ $key ] );
+	}
+
+	/**
 	 * A class's own method, one from a trait it uses, or one it inherits, as far as the index reaches.
 	 *
 	 * @param string $class
@@ -190,19 +246,20 @@ final class Source_Index {
 		$queue = array( strtolower( ltrim( $class, '\\' ) ) );
 		$seen  = array();
 		while ( ! empty( $queue ) ) {
-			$key = array_shift( $queue );
-			if ( isset( $seen[ $key ] ) || ! isset( $this->classes[ $key ] ) ) {
+			$key   = array_shift( $queue );
+			$found = $this->classes[ $key ] ?? $this->context[ $key ] ?? null;
+			if ( isset( $seen[ $key ] ) || null === $found ) {
 				continue;
 			}
 			$seen[ $key ] = true;
-			if ( isset( $this->classes[ $key ]['methods'][ strtolower( $method ) ] ) ) {
+			if ( isset( $found['methods'][ strtolower( $method ) ] ) ) {
 				return true;
 			}
-			foreach ( $this->classes[ $key ]['traits'] as $trait ) {
+			foreach ( $found['traits'] as $trait ) {
 				$queue[] = strtolower( $trait );
 			}
-			if ( '' !== $this->classes[ $key ]['parent'] ) {
-				$queue[] = strtolower( $this->classes[ $key ]['parent'] );
+			if ( '' !== $found['parent'] ) {
+				$queue[] = strtolower( $found['parent'] );
 			}
 		}
 
