@@ -8,6 +8,8 @@
 	<testsuites>
 		<testsuite name="kernel">
 			<directory>tests</directory>
+			<!-- A fixture plugin's own tests, run only by bin/mutate inside Mutate_Infection_Test. -->
+			<exclude>tests/fixtures</exclude>
 		</testsuite>
 	</testsuites>
 </phpunit>
