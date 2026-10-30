@@ -3,14 +3,20 @@
 /**
  * wp-test-kernel — helper commands for running WordPress tests on the Developer-Tools test kernel.
  *
- *   wp-test-kernel attributes <dir|file>... [--static-providers] [--covers [--source=<dir>,...]]
+ *   wp-test-kernel attributes <dir|file>... [--static-providers] [--covers [--source=<dir>,...] [--context=<dir>,...]]
  *       Add PHPUnit attributes next to docblock tags (and make data providers public static). --covers
  *       also turns @covers/@coversDefaultClass/@coversNothing into class-level coverage attributes
  *       and removes those docblock lines. A method tag becomes its class (CoversMethod would credit
  *       only that method's lines, not the private helpers it calls); a trait gets CoversTrait.
  *       --source checks every target against what those directories declare: a class_alias()
  *       name becomes its real class, and a target that does not exist, or is an interface, is
- *       kept as a docblock line and reported.
+ *       kept as a docblock line and reported. --context names directories (an add-on's parent
+ *       plugin) read only to follow inheritance: their methods count, their classes are never targets.
+ *   wp-test-kernel covers-check <dir|file>... --source=<dir>,... [--context=<dir>,...] [--format=text|github]
+ *       Check every test class's coverage attributes against what the source declares, without
+ *       running the tests (PHPUnit reports an invalid target only while it collects coverage). Exit 1
+ *       on a missing or wrong-kind target, CoversMethod, CoversNothing beside other targets, or a
+ *       test class with no coverage attribute.
  *   wp-test-kernel parity --old=<junit.xml> --new=<junit.xml> [--allow=<allowlist.json>] [--format=text|github|markdown]
  *       Compare per-test outcomes of two runs; exit 1 on unexplained differences.
  *   wp-test-kernel order --from=<junit.xml> --config=<phpunit.xml> --out=<phpunit.order.xml>
@@ -25,6 +31,7 @@ foreach ( array( __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autol
 }
 
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Attribute_Adder;
+use Uncanny_Owl\Wp_Test_Kernel\Tools\Covers_Check;
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Junit_Report;
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Source_Index;
 
@@ -58,7 +65,8 @@ function wp_test_kernel_attributes( array $paths, array $options ) {
 	$adder   = new Attribute_Adder();
 	$changed = 0;
 	if ( ! empty( $options['source'] ) && true !== $options['source'] ) {
-		$adder->use_source_index( Source_Index::build( array_filter( explode( ',', (string) $options['source'] ) ) ) );
+		$context = empty( $options['context'] ) || true === $options['context'] ? array() : array_filter( explode( ',', (string) $options['context'] ) );
+		$adder->use_source_index( Source_Index::build( array_filter( explode( ',', (string) $options['source'] ) ), $context ) );
 	}
 	$files   = array();
 
@@ -99,6 +107,44 @@ function wp_test_kernel_attributes( array $paths, array $options ) {
  *
  * @return int
  */
+function wp_test_kernel_covers_check( array $paths, array $options ) {
+	if ( empty( $options['source'] ) || true === $options['source'] ) {
+		fwrite( STDERR, "covers-check needs --source=<dir>,...\n" );
+		return 2;
+	}
+	$roots   = array_filter( explode( ',', (string) $options['source'] ) );
+	$context = empty( $options['context'] ) || true === $options['context'] ? array() : array_filter( explode( ',', (string) $options['context'] ) );
+	$check   = new Covers_Check( Source_Index::build( $roots, $context ), $roots );
+
+	$files = array();
+	foreach ( $paths as $path ) {
+		if ( is_file( $path ) ) {
+			$files[] = $path;
+			continue;
+		}
+		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $path, FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $file ) {
+			if ( 'php' === $file->getExtension() ) {
+				$files[] = $file->getPathname();
+			}
+		}
+	}
+	sort( $files );
+	foreach ( $files as $file ) {
+		$check->check_file( $file );
+	}
+
+	$github = 'github' === ( $options['format'] ?? 'text' );
+	foreach ( $check->problems as $problem ) {
+		echo $github
+			? sprintf( "::error file=%s,line=%d::%s\n", $problem['file'], $problem['line'], $problem['message'] )
+			: sprintf( "%s:%d %s\n", $problem['file'], $problem['line'], $problem['message'] );
+	}
+	printf( "%d test classes in %d files, %d coverage problems\n", $check->classes, count( $files ), count( $check->problems ) );
+
+	return empty( $check->problems ) ? 0 : 1;
+}
+
 function wp_test_kernel_parity( array $options ) {
 	if ( empty( $options['old'] ) || empty( $options['new'] ) ) {
 		fwrite( STDERR, "parity needs --old=<junit.xml> --new=<junit.xml>\n" );
@@ -243,6 +289,8 @@ list( $wp_test_kernel_positional, $wp_test_kernel_options ) = wp_test_kernel_arg
 switch ( $argv[1] ?? '' ) {
 	case 'attributes':
 		exit( wp_test_kernel_attributes( $wp_test_kernel_positional, $wp_test_kernel_options ) );
+	case 'covers-check':
+		exit( wp_test_kernel_covers_check( $wp_test_kernel_positional, $wp_test_kernel_options ) );
 	case 'parity':
 		exit( wp_test_kernel_parity( $wp_test_kernel_options ) );
 	case 'order':
