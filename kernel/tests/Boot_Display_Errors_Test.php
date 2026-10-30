@@ -1,6 +1,6 @@
 <?php
 /**
- * Where the kernel shows PHP errors: stderr in a test process, nowhere in a mutation run.
+ * Where the kernel shows PHP errors: stderr in a test process, nowhere when a run asks for none.
  */
 
 use PHPUnit\Framework\TestCase;
@@ -16,7 +16,7 @@ class Boot_Display_Errors_Test extends TestCase {
 		$this->assertSame( 'stderr', Boot::display_errors() );
 	}
 
-	public function test_a_mutation_run_shows_none_because_infection_stops_at_the_first_byte_on_stderr(): void {
+	public function test_a_run_that_asks_for_none_shows_none(): void {
 		putenv( 'WP_TEST_KERNEL_DISPLAY_ERRORS=0' );
 
 		$this->assertSame( '0', Boot::display_errors() );

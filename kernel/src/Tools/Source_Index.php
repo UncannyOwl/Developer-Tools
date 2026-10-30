@@ -19,10 +19,10 @@ use PhpParser\ParserFactory;
  */
 final class Source_Index {
 
-	/** @var array<string, array{name: string, kind: string, methods: array<string, string>, parent: string, traits: string[]}> lowercase FQCN => class, trait, interface or enum */
+	/** @var array<string, array{name: string, kind: string, methods: array<string, string>, parent: string, traits: string[], interfaces: string[], file: string}> lowercase FQCN => class, trait, interface or enum */
 	private $classes = array();
 
-	/** @var array<string, array{name: string, kind: string, methods: array<string, string>, parent: string, traits: string[]}> lowercase FQCN => a class from the context directories: read for inheritance only, never a target */
+	/** @var array<string, array{name: string, kind: string, methods: array<string, string>, parent: string, traits: string[], interfaces: string[], file: string}> lowercase FQCN => a class from the context directories: read for inheritance only, never a target */
 	private $context = array();
 
 	/** @var array<string, string> lowercase alias => the real FQCN (from class_alias() calls) */
@@ -30,6 +30,9 @@ final class Source_Index {
 
 	/** @var array<string, string> lowercase FQ function => name */
 	private $functions = array();
+
+	/** @var array<string, string> lowercase FQ function => the file declaring it */
+	private $function_files = array();
 
 	/** @var array<string, string[]> lowercase short class name => FQCNs */
 	private $short = array();
@@ -52,6 +55,8 @@ final class Source_Index {
 		$index->aliases    = $scan->aliases;
 		$index->functions  = $scan->functions;
 		$index->short      = $scan->short;
+
+		$index->function_files = $scan->function_files;
 
 		return $index;
 	}
@@ -101,11 +106,13 @@ final class Source_Index {
 						}
 					}
 					$index->classes[ strtolower( $name ) ] = array(
-						'name'    => $name,
-						'kind'    => self::kind( $class ),
-						'methods' => $methods,
-						'parent'  => $parent,
-						'traits'  => $traits,
+						'name'       => $name,
+						'kind'       => self::kind( $class ),
+						'methods'    => $methods,
+						'parent'     => $parent,
+						'traits'     => $traits,
+						'interfaces' => self::interfaces( $class ),
+						'file'       => $file,
 					);
 					$index->short[ strtolower( $class->name->toString() ) ][] = $name;
 				}
@@ -121,7 +128,8 @@ final class Source_Index {
 				}
 				foreach ( $finder->findInstanceOf( $ast, Function_::class ) as $function ) {
 					$name = null !== $function->namespacedName ? $function->namespacedName->toString() : $function->name->toString();
-					$index->functions[ strtolower( $name ) ] = $name;
+					$index->functions[ strtolower( $name ) ]      = $name;
+					$index->function_files[ strtolower( $name ) ] = $file;
 				}
 			}
 		}
@@ -170,6 +178,29 @@ final class Source_Index {
 		}
 
 		return 'class';
+	}
+
+	/**
+	 * The interfaces a class or enum implements, or an interface extends, as written.
+	 *
+	 * @param ClassLike $class
+	 *
+	 * @return string[]
+	 */
+	private static function interfaces( ClassLike $class ) {
+		$names = array();
+		if ( $class instanceof \PhpParser\Node\Stmt\Class_ || $class instanceof \PhpParser\Node\Stmt\Enum_ ) {
+			$names = $class->implements;
+		} elseif ( $class instanceof \PhpParser\Node\Stmt\Interface_ ) {
+			$names = $class->extends;
+		}
+
+		return array_map(
+			static function ( $name ) {
+				return $name->toString();
+			},
+			$names
+		);
 	}
 
 	/**
@@ -275,6 +306,136 @@ final class Source_Index {
 		$key = strtolower( ltrim( $function, '\\' ) );
 
 		return $this->functions[ $key ] ?? null;
+	}
+
+	/**
+	 * The files PHPUnit reads for a class or trait named as a coverage target: its own, its parents'
+	 * and those of the traits they use, because PHPUnit credits those lines to the class too.
+	 *
+	 * @param string $class
+	 *
+	 * @return string[] Empty when the source does not declare it.
+	 */
+	public function files_of_class( $class ) {
+		$files = array();
+		$queue = array( strtolower( ltrim( $class, '\\' ) ) );
+		$seen  = array();
+		while ( ! empty( $queue ) ) {
+			$key = array_shift( $queue );
+			if ( isset( $seen[ $key ] ) || ! isset( $this->classes[ $key ] ) ) {
+				continue;
+			}
+			$seen[ $key ] = true;
+			$found        = $this->classes[ $key ];
+			$files[]      = $found['file'];
+			foreach ( $found['traits'] as $trait ) {
+				$queue[] = strtolower( $trait );
+			}
+			if ( '' !== $found['parent'] ) {
+				$queue[] = strtolower( $found['parent'] );
+			}
+		}
+
+		return array_values( array_unique( $files ) );
+	}
+
+	/**
+	 * @param string $function
+	 *
+	 * @return string[] The file declaring it, or none.
+	 */
+	public function files_of_function( $function ) {
+		$key = strtolower( ltrim( $function, '\\' ) );
+
+		return isset( $this->function_files[ $key ] ) ? array( $this->function_files[ $key ] ) : array();
+	}
+
+	/**
+	 * The files declaring anything in this namespace or one below it.
+	 *
+	 * @param string $namespace
+	 *
+	 * @return string[]
+	 */
+	public function files_in_namespace( $namespace ) {
+		$prefix = strtolower( trim( $namespace, '\\' ) ) . '\\';
+		$files  = array();
+		foreach ( $this->classes as $key => $class ) {
+			if ( 0 === strpos( $key, $prefix ) ) {
+				$files[] = $class['file'];
+			}
+		}
+		foreach ( $this->function_files as $key => $file ) {
+			if ( 0 === strpos( $key, $prefix ) ) {
+				$files[] = $file;
+			}
+		}
+
+		return array_values( array_unique( $files ) );
+	}
+
+	/**
+	 * A class and every class below it (CoversClassesThatExtendClass), with what each one reads.
+	 *
+	 * @param string $class
+	 *
+	 * @return string[]
+	 */
+	public function files_extending( $class ) {
+		$target = strtolower( ltrim( $class, '\\' ) );
+		$files  = $this->files_of_class( $target );
+		foreach ( array_keys( $this->classes ) as $key ) {
+			if ( $key !== $target && in_array( $target, $this->ancestors( $key ), true ) ) {
+				$files = array_merge( $files, $this->files_of_class( $key ) );
+			}
+		}
+
+		return array_values( array_unique( $files ) );
+	}
+
+	/**
+	 * An interface and every class that names it in its own `implements`, which is what PHPUnit maps
+	 * CoversClassesThatImplementInterface to, with what each class reads.
+	 *
+	 * @param string $interface
+	 *
+	 * @return string[]
+	 */
+	public function files_implementing( $interface ) {
+		$target = strtolower( ltrim( $interface, '\\' ) );
+		$files  = isset( $this->classes[ $target ] ) ? array( $this->classes[ $target ]['file'] ) : array();
+		foreach ( $this->classes as $key => $class ) {
+			if ( 'interface' === $class['kind'] ) {
+				continue;
+			}
+			foreach ( $class['interfaces'] as $name ) {
+				if ( strtolower( $name ) === $target ) {
+					$files = array_merge( $files, $this->files_of_class( $key ) );
+				}
+			}
+		}
+
+		return array_values( array_unique( $files ) );
+	}
+
+	/**
+	 * Lowercase names of a class's parents, nearest first, as far as the source declares them.
+	 *
+	 * @param string $key Lowercase FQCN.
+	 *
+	 * @return string[]
+	 */
+	private function ancestors( $key ) {
+		$ancestors = array();
+		while ( isset( $this->classes[ $key ] ) && '' !== $this->classes[ $key ]['parent'] ) {
+			$key = strtolower( $this->classes[ $key ]['parent'] );
+			if ( in_array( $key, $ancestors, true ) ) {
+				break;
+			}
+			$ancestors[] = $key;
+		}
+
+		return $ancestors;
 	}
 
 	/**
