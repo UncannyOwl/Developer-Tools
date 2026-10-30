@@ -147,6 +147,28 @@ final class Mutate_Runner_Test extends TestCase {
 		$this->assertSame( $this->root . '/src/views', $source->getElementsByTagName( 'exclude' )->item( 0 )->getElementsByTagName( 'directory' )->item( 0 )->textContent );
 	}
 
+	public function test_the_fail_settings_the_plugin_leaves_out_are_stated_as_phpunits_defaults(): void {
+		$config = $this->root . '/phpunit.xml.dist';
+		file_put_contents( $config, str_replace( ' failOnWarning="true" failOnRisky="true"', '', (string) file_get_contents( $config ) ) );
+
+		$phpunit = $this->phpunit_config( array( 'files' => array( 'src/Beta.php' ), 'tests' => array( 'tests/unit/Beta_Test.php' ) ) )->documentElement;
+
+		$this->assertSame( 'false', $phpunit->getAttribute( 'failOnWarning' ), 'Infection would add true, failing mutants on warnings the plugin\'s own run lets pass.' );
+		$this->assertSame( 'false', $phpunit->getAttribute( 'failOnRisky' ) );
+		$this->assertSame( $this->root . '/tests/bootstrap.php', $phpunit->getAttribute( 'bootstrap' ) );
+		$this->assertSame( 0, $phpunit->getElementsByTagName( 'logging' )->length, 'The plugin\'s own logs would be overwritten by every run.' );
+	}
+
+	public function test_a_mutant_run_stops_early_only_on_what_fails_the_plugins_run(): void {
+		$strict = $this->root . '/strict.xml';
+		$lax    = $this->root . '/lax.xml';
+		file_put_contents( $strict, '<phpunit failOnWarning="true" failOnRisky="true"/>' );
+		file_put_contents( $lax, '<phpunit failOnWarning="false" failOnRisky="false"/>' );
+
+		$this->assertSame( '--stop-on-defect=' . PHP_INT_MAX . ' --stop-on-error --stop-on-failure --stop-on-warning --stop-on-risky', Infection_Runner::mutant_stop_options( $strict ) );
+		$this->assertSame( '--stop-on-defect=' . PHP_INT_MAX . ' --stop-on-error --stop-on-failure', Infection_Runner::mutant_stop_options( $lax ), 'Infection\'s stopOnDefect would stop at a test that only warns, before a later test fails.' );
+	}
+
 	public function test_the_initial_run_is_judged_by_phpunits_exit_code_not_by_its_stderr(): void {
 		// A stand-in PHPUnit: warns on stderr while it boots (as Automator does without built assets),
 		// writes the coverage Infection reads, and exits with STUB_EXIT.

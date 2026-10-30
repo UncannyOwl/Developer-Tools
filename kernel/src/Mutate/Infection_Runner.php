@@ -23,6 +23,8 @@ use RuntimeException;
  *   ended the whole run.
  * - The coverage source holds the run's files and every file its tests name as a coverage target, as
  *   the plugin's <source> does; Infection mutates only the run's files.
+ * - A mutant fails exactly when the plugin's config fails a test: its own failOnWarning and failOnRisky
+ *   (PHPUnit's default when it sets none), and a mutant run stops early only on what fails it.
  */
 final class Infection_Runner {
 
@@ -194,6 +196,15 @@ final class Infection_Runner {
 		// The run's suite replaces the base config's suites, so a default suite named there would select nothing.
 		$phpunit->removeAttribute( 'defaultTestSuite' );
 
+		// What fails a test is the plugin's choice, stated outright: Infection adds failOnWarning and
+		// failOnRisky as true to a config that leaves them out, which would fail mutants on what the
+		// plugin's own run lets pass.
+		foreach ( array( 'failOnWarning', 'failOnRisky' ) as $attribute ) {
+			if ( ! $phpunit->hasAttribute( $attribute ) ) {
+				$phpunit->setAttribute( $attribute, 'false' );
+			}
+		}
+
 		$base_source = $doc->getElementsByTagName( 'source' )->item( 0 );
 		$base_source = $base_source instanceof DOMElement ? $base_source->cloneNode( true ) : null;
 
@@ -338,21 +349,51 @@ final class Infection_Runner {
 		}
 
 		$config = array(
-			'source'   => array( 'directories' => array_keys( $directories ) ),
-			'phpUnit'  => array(
+			'source'               => array( 'directories' => array_keys( $directories ) ),
+			'phpUnit'              => array(
 				'configDir'  => $dir,
 				'customPath' => $this->project_dir . '/vendor/bin/phpunit',
 			),
-			'tmpDir'   => $dir . '/tmp',
-			'logs'     => array(
+			'testFrameworkOptions' => self::mutant_stop_options( $dir . '/phpunit.xml' ),
+			'tmpDir'               => $dir . '/tmp',
+			'logs'                 => array(
 				'json' => $dir . '/infection.json',
 				'text' => $dir . '/infection.log',
 			),
-			'mutators' => (object) array( '@default' => true ),
-			'timeout'  => (int) ( $this->scope->get( 'timeout' ) ?: 120 ),
+			'mutators'             => (object) array( '@default' => true ),
+			'timeout'              => (int) ( $this->scope->get( 'timeout' ) ?: 120 ),
 		);
 
 		file_put_contents( $dir . '/infection.json5', json_encode( $config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
+	}
+
+	/**
+	 * When a mutant run may stop: at the first error or failure, and at the first warning or risky
+	 * test only when the config fails a run on it.
+	 *
+	 * Infection sets stopOnDefect on every mutant run, and PHPUnit counts warnings and risky tests as
+	 * defects. With failOnWarning (or failOnRisky) off, the run would stop at the first test that only
+	 * warns, exit 0, and the mutant would escape though a later test fails on it, as the plugin's own
+	 * run would show. The command line's threshold outranks the config's.
+	 *
+	 * @param string $phpunit_config The run's PHPUnit config, with failOnWarning and failOnRisky stated.
+	 *
+	 * @return string
+	 */
+	public static function mutant_stop_options( $phpunit_config ) {
+		$doc = new DOMDocument();
+		$doc->load( $phpunit_config );
+		$phpunit = $doc->documentElement;
+
+		$options = array( '--stop-on-defect=' . PHP_INT_MAX, '--stop-on-error', '--stop-on-failure' );
+		if ( 'true' === strtolower( $phpunit->getAttribute( 'failOnWarning' ) ) ) {
+			$options[] = '--stop-on-warning';
+		}
+		if ( 'true' === strtolower( $phpunit->getAttribute( 'failOnRisky' ) ) ) {
+			$options[] = '--stop-on-risky';
+		}
+
+		return implode( ' ', $options );
 	}
 
 	/**

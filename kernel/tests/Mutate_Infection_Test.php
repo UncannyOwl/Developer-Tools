@@ -73,6 +73,27 @@ final class Mutate_Infection_Test extends TestCase {
 		return $mutants;
 	}
 
+	/**
+	 * @param string $mutator
+	 * @param string $code    A fragment of the mutated line in src/Picker.php.
+	 *
+	 * @return array{status: string, file: string, line: int, mutator: string, output: string}
+	 */
+	private function picker_mutant( $mutator, $code ) {
+		$line = 0;
+		foreach ( file( $this->root . '/src/Picker.php' ) as $number => $text ) {
+			if ( false !== strpos( $text, $code ) && false === strpos( $text, '`' ) ) {
+				$line = $number + 1;
+			}
+		}
+		foreach ( $this->mutants() as $mutant ) {
+			if ( $mutator === $mutant['mutator'] && $line === $mutant['line'] ) {
+				return $mutant;
+			}
+		}
+		$this->fail( sprintf( 'No %s mutant on line %d of src/Picker.php.', $mutator, $line ) );
+	}
+
 	public function test_a_warning_the_plugin_shows_while_it_boots_does_not_stop_the_run(): void {
 		putenv( 'MUTATE_FIXTURE_BOOT_WARNING=1' );
 
@@ -89,5 +110,23 @@ final class Mutate_Infection_Test extends TestCase {
 		$this->assertStringNotContainsString( 'STOPPED', $output, 'Label_Test, beside Shelf_Test, covers Label: a valid target in the plugin\'s <source>.' );
 		$this->assertSame( array( 'src/Shelf/Shelf.php' ), array_values( array_unique( array_column( $this->mutants(), 'file' ) ) ), 'Only the run\'s file is mutated.' );
 		$this->assertNotContains( 'uncovered', array_column( $this->mutants(), 'status' ), 'Shelf_Test\'s coverage of Shelf counts (PHPUnit drops a test\'s coverage when one of its targets is invalid).' );
+	}
+
+	public function test_a_mutant_only_a_warning_shows_is_killed_when_the_plugin_fails_on_warnings(): void {
+		$this->mutate( 'src/Picker.php' );
+
+		$mutant = $this->picker_mutant( 'GreaterThan', 'count( $items ) > 0' );
+		$this->assertSame( 'killed', $mutant['status'] );
+		$this->assertStringContainsString( 'PHP warning', $mutant['output'], 'Every assertion passes on this mutant; the warning kills it.' );
+	}
+
+	public function test_a_mutant_run_does_not_stop_at_a_warning_the_plugin_lets_pass(): void {
+		$config = $this->root . '/phpunit.xml.dist';
+		file_put_contents( $config, str_replace( 'failOnWarning="true"', 'failOnWarning="false"', (string) file_get_contents( $config ) ) );
+
+		$this->mutate( 'src/Picker.php' );
+
+		$this->assertSame( 'killed', $this->picker_mutant( 'LessThan', '$index < count( $items )' )['status'], 'The first covering test only warns; the next one fails, as the plugin\'s own run would show.' );
+		$this->assertSame( 'escaped', $this->picker_mutant( 'GreaterThan', 'count( $items ) > 0' )['status'], 'With failOnWarning off the plugin\'s own run passes this mutant, so it escapes.' );
 	}
 }
