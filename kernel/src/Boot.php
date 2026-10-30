@@ -82,13 +82,18 @@ final class Boot {
 	/**
 	 * Where PHP displays errors. Never stdout: output there makes every later header() or setcookie()
 	 * in a test warn "headers already sent". The main process uses stderr; a child process displays
-	 * nothing, because PHPUnit reports any stderr from an isolated test as an error. Either way PHP
-	 * logs every error to tests/_output/php-errors.log.
+	 * nothing, because PHPUnit reports any stderr from an isolated test as an error, and neither does a
+	 * run with WP_TEST_KERNEL_DISPLAY_ERRORS=0, which bin/mutate sets: Infection stops its initial test
+	 * run at the first byte on stderr. Either way PHP logs every error to tests/_output/php-errors.log.
 	 *
 	 * @return string A display_errors value.
 	 */
 	public static function display_errors() {
-		return self::$isolated_child ? '0' : 'stderr';
+		if ( self::$isolated_child || '0' === getenv( 'WP_TEST_KERNEL_DISPLAY_ERRORS' ) ) {
+			return '0';
+		}
+
+		return 'stderr';
 	}
 
 	/**
