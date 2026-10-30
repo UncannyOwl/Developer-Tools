@@ -18,7 +18,12 @@
  *       on a missing or wrong-kind target, CoversMethod, CoversNothing beside other targets, or a
  *       test class with no coverage attribute.
  *   wp-test-kernel parity --old=<junit.xml> --new=<junit.xml> [--allow=<allowlist.json>] [--format=text|github|markdown]
- *       Compare per-test outcomes of two runs; exit 1 on unexplained differences.
+ *       Compare per-test outcomes of two runs; exit 1 on unexplained differences, 2 when a report cannot be
+ *       read or two of its test cases have one id. A test's id is "Ns\Foo_Test::method words [data set]",
+ *       with the class's namespace. The allowlist maps ids to the reason they may differ; its "@renamed"
+ *       object maps classes in the old report to their new names: "Old_Test" (any namespace, kept),
+ *       "Ns\Old_Test" (that class) or "tests/path/Old_Test.php" (that file's test cases, for an old
+ *       report that has only short class names) => "New_Test" or "Ns\New_Test".
  *   wp-test-kernel order --from=<junit.xml> --config=<phpunit.xml> --out=<phpunit.order.xml>
  *       Write a PHPUnit config whose test suite lists files in the order the JUnit run executed them.
  */
@@ -151,15 +156,21 @@ function wp_test_kernel_parity( array $options ) {
 		return 2;
 	}
 
-	$old   = Junit_Report::read( (string) $options['old'] )['tests'];
-	$new   = Junit_Report::read( (string) $options['new'] )['tests'];
 	$allow = array();
 	if ( ! empty( $options['allow'] ) && is_readable( (string) $options['allow'] ) ) {
 		$allow = (array) json_decode( (string) file_get_contents( (string) $options['allow'] ), true );
 	}
-	// "@renamed": { "Old_Class": "New_Class" } compares a renamed test class with its old name.
-	$old = Junit_Report::rename_classes( $old, (array) ( $allow['@renamed'] ?? array() ) );
+	// "@renamed" (see the header) compares a renamed or moved test class with its old name.
+	$renames = (array) ( $allow['@renamed'] ?? array() );
 	unset( $allow['@renamed'] );
+
+	try {
+		$old = Junit_Report::read( (string) $options['old'], $renames )['tests'];
+		$new = Junit_Report::read( (string) $options['new'] )['tests'];
+	} catch ( RuntimeException $e ) {
+		fwrite( STDERR, $e->getMessage() . "\n" );
+		return 2;
+	}
 
 	$rows        = array();
 	$unexplained = 0;

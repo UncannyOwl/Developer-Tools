@@ -6,7 +6,12 @@ use RuntimeException;
 use SimpleXMLElement;
 
 /**
- * Reads a JUnit XML file (Codeception 4 / PHPUnit 9 or PHPUnit 13) into normalised test outcomes.
+ * Reads a JUnit XML file (Codeception 4 / PHPUnit 9, PHPUnit 13 or Pest 5) into normalised test outcomes.
+ *
+ * A test's id is its fully qualified class and its normalised method name, "Ns\Foo_Test::rows are refused [0]".
+ * All three runners write the class with its namespace (class_name() mends the few Pest 5 cuts short), so one
+ * test has one id in each of their reports. The namespace stays in the id: two test classes may share a short
+ * name, and their tests must not merge. A report in which two test cases still share an id is refused.
  */
 final class Junit_Report {
 
@@ -15,11 +20,14 @@ final class Junit_Report {
 	const SKIP = 'skip';
 
 	/**
-	 * @param string $file
+	 * @param string                $file
+	 * @param array<string, string> $renames Old class (or test file) => new class, applied before the ids are made. See rename().
 	 *
 	 * @return array{tests: array<string, array{outcome: string, file: string, message: string}>, files: string[]}
+	 *
+	 * @throws RuntimeException When the file cannot be read, or two of its test cases have one id.
 	 */
-	public static function read( $file ) {
+	public static function read( $file, array $renames = array() ) {
 
 		if ( ! is_readable( $file ) ) {
 			throw new RuntimeException( 'JUnit file not readable: ' . $file );
@@ -30,18 +38,35 @@ final class Junit_Report {
 			throw new RuntimeException( 'Invalid JUnit XML: ' . $file );
 		}
 
-		$tests = array();
-		$files = array();
+		$tests   = array();
+		$sources = array();
+		$files   = array();
 
 		foreach ( $xml->xpath( '//testcase' ) as $case ) {
-			$id                  = self::id( $case );
-			$path                = (string) ( $case['file'] ?? '' );
-			$tests[ $id ]        = array(
+			$path   = (string) ( $case['file'] ?? '' );
+			$class  = self::class_name( $case );
+			$id     = self::rename( $class, $path, $renames ) . '::' . self::method( $case );
+			$source = $class . '::' . $case['name'] . ( '' === $path ? '' : ' in ' . $path );
+
+			if ( isset( $tests[ $id ] ) ) {
+				throw new RuntimeException(
+					sprintf(
+						'%s: two test cases have the id "%s": %s, and %s. Rename one of the tests, or tell them apart with a "@renamed" entry.',
+						$file,
+						$id,
+						$sources[ $id ],
+						$source
+					)
+				);
+			}
+
+			$tests[ $id ]   = array(
 				'outcome' => self::outcome( $case ),
 				'file'    => $path,
 				'message' => self::message( $case ),
 			);
-			$files[ $path ]      = true;
+			$sources[ $id ] = $source;
+			$files[ $path ] = true;
 		}
 
 		return array(
@@ -51,41 +76,100 @@ final class Junit_Report {
 	}
 
 	/**
-	 * Re-key tests whose class was renamed, so a renamed test compares with its old self.
-	 *
-	 * @param array<string, array{outcome: string, file: string, message: string}> $tests
-	 * @param array<string, string>                                                $renames Old short class name => new.
-	 *
-	 * @return array<string, array{outcome: string, file: string, message: string}>
-	 */
-	public static function rename_classes( array $tests, array $renames ) {
-
-		$renamed = array();
-		foreach ( $tests as $id => $test ) {
-			$class           = strstr( $id, '::', true );
-			$key             = isset( $renames[ $class ] ) ? $renames[ $class ] . substr( $id, strlen( $class ) ) : $id;
-			$renamed[ $key ] = $test;
-		}
-
-		return $renamed;
-	}
-
-	/**
-	 * "Class::method" plus a normalised data-set suffix, the same for both runners.
+	 * The test case's class with its namespace, from "class", or else from the dotted "classname".
 	 *
 	 * @param SimpleXMLElement $case
 	 *
 	 * @return string
 	 */
-	private static function id( SimpleXMLElement $case ) {
+	private static function class_name( SimpleXMLElement $case ) {
 
-		$name  = (string) $case['name'];
 		$class = (string) ( $case['class'] ?? '' );
 
-		if ( '' === $class && isset( $case['classname'] ) ) {
-			$class = (string) $case['classname'];
+		// "classname" separates namespaces with dots, which a PHP class name cannot contain.
+		if ( '' === $class ) {
+			$class = str_replace( '.', '\\', (string) ( $case['classname'] ?? '' ) );
 		}
-		$class = ltrim( (string) preg_replace( '/^.*\\\\/', '', $class ), '\\' );
+		$class = ltrim( $class, '\\' );
+
+		// Pest 5 writes a test case's class cut after the first "P\" in it, wherever that falls: a test in
+		// "Ns\SliceWP\Helpers" is reported in "Helpers". Its class's test suite keeps the whole name.
+		foreach ( (array) $case->xpath( 'ancestor::testsuite/@name' ) as $suite ) {
+			$suite = ltrim( (string) $suite, '\\' );
+			$cut   = strpos( $suite, 'P\\' );
+			if ( false !== $cut && substr( $suite, $cut + 2 ) === $class ) {
+				return $suite;
+			}
+		}
+
+		return $class;
+	}
+
+	/**
+	 * A class after the "@renamed" entries, so a renamed or moved test compares with its old self.
+	 *
+	 * The most specific key wins:
+	 * - "path/to/Foo_Test.php" names a test file: the test cases whose file is that path, or ends in "/" and it.
+	 *   It tells apart classes that an old report names only by their short name.
+	 * - "Ns\Foo_Test" (any key with a backslash) names that class exactly; "\Foo_Test" is the global Foo_Test.
+	 * - "Foo_Test" names every class with that short name, in any namespace.
+	 * A value with a backslash is the new class with its namespace; one without replaces only the short name.
+	 *
+	 * @param string                $class
+	 * @param string                $path
+	 * @param array<string, string> $renames
+	 *
+	 * @return string
+	 */
+	private static function rename( $class, $path, array $renames ) {
+
+		$short = (string) substr( (string) strrchr( '\\' . $class, '\\' ), 1 );
+		$to    = self::renamed_file( $path, $renames ) ?? $renames[ '\\' . $class ] ?? $renames[ $class ] ?? $renames[ $short ] ?? null;
+
+		if ( null === $to ) {
+			return $class;
+		}
+
+		$to = (string) $to;
+		if ( false !== strpos( $to, '\\' ) ) {
+			return ltrim( $to, '\\' );
+		}
+
+		return substr( $class, 0, strlen( $class ) - strlen( $short ) ) . $to;
+	}
+
+	/**
+	 * @param string                $path
+	 * @param array<string, string> $renames
+	 *
+	 * @return string|null The new class a test-file key gives the path, or null.
+	 */
+	private static function renamed_file( $path, array $renames ) {
+
+		if ( '' === $path ) {
+			return null;
+		}
+
+		foreach ( $renames as $from => $to ) {
+			$from = (string) $from;
+			if ( '.php' === substr( $from, -4 ) && ( $path === $from || str_ends_with( $path, '/' . ltrim( $from, '/' ) ) ) ) {
+				return (string) $to;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * The method name plus a normalised data-set suffix, the same for every runner.
+	 *
+	 * @param SimpleXMLElement $case
+	 *
+	 * @return string
+	 */
+	private static function method( SimpleXMLElement $case ) {
+
+		$name = (string) $case['name'];
 
 		// PHPUnit: "test with data set #0" / "test with data set "name"". Codeception: "test | #0" / "test | "name"".
 		$set = '';
@@ -100,7 +184,7 @@ final class Junit_Report {
 		$name = (string) preg_replace( '/(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])|(?<=[0-9])(?=[A-Za-z])/', ' ', $name );
 		$name = strtolower( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', ' ', $name ) ) );
 
-		return $class . '::' . $name . $set;
+		return $name . $set;
 	}
 
 	/**
