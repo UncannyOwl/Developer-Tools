@@ -22,6 +22,7 @@ if ($showHelp) {
     echo "Usage: php crap-score.php [options]\n\n";
     echo "Options:\n";
     echo "  --pr        Analyze only changed files in PR\n";
+    echo "  --plugin-path=<dir>  The plugin to analyze (default: the current folder)\n";
     echo "  --verbose   Show detailed method-by-method output\n";
     echo "  --help      Show this help message\n\n";
     echo "Examples:\n";
@@ -34,14 +35,29 @@ if ($showHelp) {
 
 // Get the script directory
 $scriptDir = dirname(__FILE__);
-$baseDir = realpath(dirname(dirname($scriptDir))); // automator-dev-tools
-$projectRootDir = dirname(dirname($baseDir)); // Go up to plugin root
+
+// The plugin to analyze: --plugin-path=<dir>, else the folder the command runs in (a Composer script
+// runs in the plugin's root). Not derived from where Developer-Tools is installed: a plugin may keep
+// its tools in a Composer project of their own (Automator Free: tests/tools), outside its vendor/.
+$projectRootDir = getcwd();
+foreach ($argv as $arg) {
+    if (0 === strpos($arg, '--plugin-path=')) {
+        $projectRootDir = substr($arg, strlen('--plugin-path='));
+    }
+}
+$projectRootDir = realpath($projectRootDir);
+if (false === $projectRootDir) {
+    echo "Error: the --plugin-path folder does not exist.\n";
+    exit(1);
+}
 
 // Change to the project root directory
 chdir($projectRootDir);
 
-// Get the vendor directory path
-$vendorDir = $projectRootDir . DIRECTORY_SEPARATOR . 'vendor';
+// The vendor/ Developer-Tools was installed into, which holds PHPMD (the plugin's own vendor/ or a
+// separate tools project's).
+require_once dirname($scriptDir) . DIRECTORY_SEPARATOR . 'kernel' . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'Tools' . DIRECTORY_SEPARATOR . 'Tool_Paths.php';
+$vendorDir = \Uncanny_Owl\Wp_Test_Kernel\Tools\Tool_Paths::vendor_dir();
 
 // Get the PHPMD binary path
 $phpmdBin = $vendorDir . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpmd';
