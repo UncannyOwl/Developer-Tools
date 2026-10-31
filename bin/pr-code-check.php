@@ -12,7 +12,7 @@ ini_set('display_errors', 1);
 // Get the command type (phpcs or phpcbf)
 $commandType = $argv[1] ?? '';
 if (!in_array($commandType, ['phpcs', 'phpcbf'])) {
-    echo "Usage: php pr-code-check.php [phpcs|phpcbf]\n";
+    echo "Usage: php pr-code-check.php [phpcs|phpcbf] [--plugin-path=<dir>]\n";
     exit(1);
 }
 
@@ -24,18 +24,30 @@ echo "Operating System: " . PHP_OS . " (Windows: " . ($isWindows ? "Yes" : "No")
 $scriptDir = dirname(__FILE__);
 echo "Script directory: $scriptDir\n";
 
-// Get the correct project root (NOT the automator-dev-tools, but the plugin root)
-$baseDir = realpath(dirname(dirname($scriptDir))); // automator-dev-tools
-$projectRootDir = dirname(dirname($baseDir)); // Go up to plugin root
-echo "Base directory (dev tools): $baseDir\n";
+// The plugin to check: --plugin-path=<dir>, else the folder the command runs in (a Composer script
+// runs in the plugin's root). Not derived from where Developer-Tools is installed: a plugin may keep
+// its tools in a Composer project of their own (Automator Free: tests/tools), outside its vendor/.
+$projectRootDir = getcwd();
+foreach (array_slice($argv, 2) as $arg) {
+    if (0 === strpos($arg, '--plugin-path=')) {
+        $projectRootDir = substr($arg, strlen('--plugin-path='));
+    }
+}
+$projectRootDir = realpath($projectRootDir);
+if (false === $projectRootDir) {
+    echo "Error: the --plugin-path folder does not exist.\n";
+    exit(1);
+}
 echo "Project root directory: $projectRootDir\n";
 
 // Change to the project root directory
 chdir($projectRootDir);
 echo "Current working directory: " . getcwd() . "\n";
 
-// Get the vendor directory path
-$vendorDir = $projectRootDir . DIRECTORY_SEPARATOR . 'vendor';
+// The vendor/ Developer-Tools was installed into, which holds PHPCS (the plugin's own vendor/ or a
+// separate tools project's).
+require_once dirname($scriptDir) . DIRECTORY_SEPARATOR . 'kernel' . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'Tools' . DIRECTORY_SEPARATOR . 'Tool_Paths.php';
+$vendorDir = \Uncanny_Owl\Wp_Test_Kernel\Tools\Tool_Paths::vendor_dir();
 echo "Vendor directory: $vendorDir\n";
 
 // Get the PHPCS binary path

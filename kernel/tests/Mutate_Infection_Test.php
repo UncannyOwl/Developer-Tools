@@ -28,7 +28,11 @@ final class Mutate_Infection_Test extends TestCase {
 
 		$this->root = sys_get_temp_dir() . '/mutate-infection-' . uniqid();
 		exec( sprintf( 'cp -R %s %s', escapeshellarg( __DIR__ . '/fixtures/mutate' ), escapeshellarg( $this->root ) ) );
-		symlink( dirname( __DIR__, 2 ) . '/vendor', $this->root . '/vendor' );
+		// The fixture keeps its test tools in a Composer project of their own (Automator Free's
+		// tests/tools), and has no vendor/ of its own: bin/mutate runs the PHPUnit and Infection
+		// Developer-Tools was installed with.
+		mkdir( $this->root . '/tests/tools', 0777, true );
+		symlink( dirname( __DIR__, 2 ) . '/vendor', $this->root . '/tests/tools/vendor' );
 	}
 
 	protected function tearDown(): void {

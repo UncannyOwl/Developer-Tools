@@ -7,7 +7,8 @@
  * stderr). A normal test run passes with it.
  */
 
-require dirname( __DIR__ ) . '/vendor/autoload.php';
+// The test tools' autoloader: a Composer project of their own (tests/tools), as in Automator Free.
+require __DIR__ . '/tools/vendor/autoload.php';
 
 spl_autoload_register(
 	static function ( $class ) {

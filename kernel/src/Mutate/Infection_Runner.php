@@ -5,6 +5,7 @@ namespace Uncanny_Owl\Wp_Test_Kernel\Mutate;
 use DOMDocument;
 use DOMElement;
 use RuntimeException;
+use Uncanny_Owl\Wp_Test_Kernel\Tools\Tool_Paths;
 
 /**
  * Runs Infection for one plan run: the run's files mutated, judged only by the run's tests.
@@ -34,8 +35,15 @@ final class Infection_Runner {
 	/** @var Scope */
 	private $scope;
 
-	/** @var string Absolute path of the project that holds vendor/ and the PHPUnit config (the plugin root). */
+	/** @var string Absolute path of the project that holds the PHPUnit config and tests/_output (the plugin root). */
 	private $project_dir;
+
+	/**
+	 * @var string Composer's bin folder holding phpunit and infection: the vendor/bin Developer-Tools was
+	 *             installed with, which is not the plugin's when the plugin keeps its test tools in a
+	 *             Composer project of their own (Automator Free: tests/tools/vendor/bin).
+	 */
+	private $bin_dir;
 
 	/** @var int */
 	private $threads;
@@ -51,12 +59,14 @@ final class Infection_Runner {
 	 * @param string $project_dir
 	 * @param int    $threads
 	 * @param string $coverage_options PHP options that turn a coverage driver on for the initial run.
+	 * @param string|null $bin_dir     The folder holding phpunit and infection; null for Tool_Paths::bin_dir().
 	 */
-	public function __construct( Scope $scope, $project_dir, $threads, $coverage_options ) {
+	public function __construct( Scope $scope, $project_dir, $threads, $coverage_options, $bin_dir = null ) {
 		$this->scope            = $scope;
 		$this->project_dir      = rtrim( $project_dir, '/' );
 		$this->threads          = max( 1, (int) $threads );
 		$this->coverage_options = (string) $coverage_options;
+		$this->bin_dir          = rtrim( null === $bin_dir ? Tool_Paths::bin_dir() : (string) $bin_dir, '/' );
 	}
 
 	/**
@@ -94,9 +104,10 @@ final class Infection_Runner {
 		// report an untested file as "nothing to mutate" and make the overall score equal the covered one.
 		$filter  = implode( ',', $run['files'] );
 		$command = sprintf(
-			'cd %s && %s vendor/bin/infection --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --with-uncovered --skip-initial-tests --coverage=%s --no-progress --no-interaction ' . $show . '%s 2>&1',
+			'cd %s && %s %s --configuration=%s --threads=%d --filter=%s --only-covering-test-cases --with-uncovered --skip-initial-tests --coverage=%s --no-progress --no-interaction ' . $show . '%s 2>&1',
 			escapeshellarg( $this->project_dir ),
 			escapeshellarg( PHP_BINARY ),
+			escapeshellarg( $this->bin_dir . '/infection' ),
 			escapeshellarg( $dir . '/infection.json5' ),
 			$this->threads,
 			escapeshellarg( $filter ),
@@ -146,11 +157,12 @@ final class Infection_Runner {
 		$php_options = array_merge( array( '-d', 'pcov.directory=' . $this->scope->root() ), preg_split( '/\s+/', trim( $this->coverage_options ), -1, PREG_SPLIT_NO_EMPTY ) );
 
 		$command = sprintf(
-			'cd %s && %s%s %s vendor/bin/phpunit --configuration %s --coverage-xml %s --log-junit %s --exclude-source-from-xml-coverage > %s 2> %s',
+			'cd %s && %s%s %s %s --configuration %s --coverage-xml %s --log-junit %s --exclude-source-from-xml-coverage > %s 2> %s',
 			escapeshellarg( $this->project_dir ),
 			$env,
 			escapeshellarg( PHP_BINARY ),
 			implode( ' ', array_map( 'escapeshellarg', $php_options ) ),
+			escapeshellarg( $this->bin_dir . '/phpunit' ),
 			escapeshellarg( $dir . '/phpunit.xml' ),
 			escapeshellarg( $dir . '/coverage/coverage-xml' ),
 			escapeshellarg( $dir . '/coverage/junit.xml' ),
@@ -352,7 +364,7 @@ final class Infection_Runner {
 			'source'               => array( 'directories' => array_keys( $directories ) ),
 			'phpUnit'              => array(
 				'configDir'  => $dir,
-				'customPath' => $this->project_dir . '/vendor/bin/phpunit',
+				'customPath' => $this->bin_dir . '/phpunit',
 			),
 			'testFrameworkOptions' => self::mutant_stop_options( $dir . '/phpunit.xml' ),
 			'tmpDir'               => $dir . '/tmp',
