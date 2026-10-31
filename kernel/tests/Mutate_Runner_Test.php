@@ -170,11 +170,13 @@ final class Mutate_Runner_Test extends TestCase {
 	}
 
 	public function test_the_initial_run_is_judged_by_phpunits_exit_code_not_by_its_stderr(): void {
-		// A stand-in PHPUnit: warns on stderr while it boots (as Automator does without built assets),
-		// writes the coverage Infection reads, and exits with STUB_EXIT.
-		mkdir( $this->root . '/vendor/bin', 0777, true );
+		// A stand-in PHPUnit in a tools project of its own (tests/tools/vendor/bin, as Automator Free keeps
+		// its test tools out of the vendor/ WordPress loads): warns on stderr while it boots (as Automator
+		// does without built assets), writes the coverage Infection reads, and exits with STUB_EXIT.
+		$bin = $this->root . '/tests/tools/vendor/bin';
+		mkdir( $bin, 0777, true );
 		file_put_contents(
-			$this->root . '/vendor/bin/phpunit',
+			$bin . '/phpunit',
 			'<?php' . "\n"
 			. 'fwrite( STDERR, "Warning: Asset file not found for handle \"uap-redirect\"\n" );' . "\n"
 			. '$xml = $argv[ array_search( "--coverage-xml", $argv, true ) + 1 ];' . "\n"
@@ -185,14 +187,18 @@ final class Mutate_Runner_Test extends TestCase {
 			. 'echo "OK (1 test, 1 assertion)\n";' . "\n"
 			. 'exit( (int) getenv( "STUB_EXIT" ) );' . "\n"
 		);
+		// The plugin's own vendor/bin is not where the tools are: a PHPUnit there fails every run.
+		mkdir( $this->root . '/vendor/bin', 0777, true );
+		file_put_contents( $this->root . '/vendor/bin/phpunit', "<?php\nexit( 9 );\n" );
 		$dir = $this->root . '/run';
 		mkdir( $dir );
 		$initial = new ReflectionMethod( Infection_Runner::class, 'run_initial_tests' );
+		$runner  = new Infection_Runner( new Scope( $this->root, array( 'paths' => array( 'src' ) ) ), $this->root, 1, '', $bin );
 
 		putenv( 'STUB_EXIT=0' );
-		$passed = $initial->invoke( $this->runner(), $dir );
+		$passed = $initial->invoke( $runner, $dir );
 		putenv( 'STUB_EXIT=1' );
-		$failed = $initial->invoke( $this->runner(), $dir );
+		$failed = $initial->invoke( $runner, $dir );
 		putenv( 'STUB_EXIT' );
 
 		$this->assertNull( $passed, 'PHPUnit passed, as `composer unit-tests` would; the warning on stderr is no verdict.' );
