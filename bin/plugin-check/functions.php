@@ -78,6 +78,68 @@ function pc_normalize( array $items, $roots ) {
 }
 
 /**
+ * The paths a file lists, one per line, as a pull request's changed files are listed: relative to
+ * the plugin folder, with blank lines, "./" prefixes and duplicates dropped.
+ *
+ * @param string $text
+ *
+ * @return string[]
+ */
+function pc_parse_file_list( $text ) {
+	$paths = array();
+	foreach ( preg_split( '~\R~', (string) $text ) as $line ) {
+		$path = ltrim( trim( str_replace( '\\', '/', $line ) ), '/' );
+		while ( 0 === strpos( $path, './' ) ) {
+			$path = substr( $path, 2 );
+		}
+		if ( '' !== $path ) {
+			$paths[ $path ] = true;
+		}
+	}
+	return array_keys( $paths );
+}
+
+/**
+ * The listed paths that are files in the shipped set: a changed file the zip leaves out (tests,
+ * docs, build config) or a deleted one is not Plugin Check's business.
+ *
+ * @param string[] $paths
+ * @param string   $root  The shipped plugin folder.
+ *
+ * @return string[]
+ */
+function pc_shipped_paths( array $paths, $root ) {
+	return array_values(
+		array_filter(
+			$paths,
+			function ( $path ) use ( $root ) {
+				return is_file( $root . '/' . $path );
+			}
+		)
+	);
+}
+
+/**
+ * Only the findings in the given files.
+ *
+ * @param array    $rows  Normalised findings (pc_normalize).
+ * @param string[] $paths
+ *
+ * @return array
+ */
+function pc_keep_paths( array $rows, array $paths ) {
+	$keep = array_fill_keys( $paths, true );
+	return array_values(
+		array_filter(
+			$rows,
+			function ( $row ) use ( $keep ) {
+				return isset( $keep[ $row['path'] ] );
+			}
+		)
+	);
+}
+
+/**
  * Split check slugs into $jobs groups. The checks that run their own PHP_CodeSniffer pass over every
  * file take nearly all the time; they are dealt out heaviest first to the lightest group. Every other
  * check goes to the last group, which the caller runs with --exclude-checks: list-checks also names

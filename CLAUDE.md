@@ -103,6 +103,9 @@ php bin/plugin-check.php --plugin-path . --build --wp-path … --update-baseline
 # Gate a saved run again without WordPress (what the tests do)
 php bin/plugin-check.php --plugin-path . --results plugin-check-results.json
 
+# A pull request's gate (what CI runs): only the shipped files the list names, every error in them, no baseline
+php bin/plugin-check.php --plugin-path . --build --wp-path … --files pr-files.txt --categories plugin_repo,security,general
+
 # From a consuming plugin: WP_PATH=/path/to/wordpress composer plugin-check
 ```
 Needs a WordPress install with the `plugin-check` plugin active; the checked plugin need not be installed there, so only static checks run. The plugin keeps `.plugin-check/config.json` (slug, mode, build command, zip path, ignores and excluded checks, each with a `reason`) and `.plugin-check/baseline.json` (errors by path, code and message, counted; no line numbers, so moved code keeps its entry). A new ERROR exits 1; warnings, ignored rows and baselined errors never fail; `--strict` also fails when baselined errors no longer occur. Pure logic is in `bin/plugin-check/functions.php`; tests in `tests/plugin-check/` with fixtures in `tests/fixtures/plugin-check/`.
