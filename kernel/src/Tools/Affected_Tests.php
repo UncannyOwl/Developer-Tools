@@ -87,12 +87,16 @@ final class Affected_Tests {
 			}
 		}
 
+		$words    = $this->words_reaching( array_keys( $changed ) );
 		$selected = array();
 		$reached  = array();
 		foreach ( $test_files as $test_file ) {
 			$real = self::real( $test_file );
 			if ( isset( $changed[ $real ] ) ) {
 				$selected[] = $test_file;
+				continue;
+			}
+			if ( ! self::may_reach( (string) file_get_contents( $test_file ), $words ) ) {
 				continue;
 			}
 			$hits = array_intersect_key( $changed, $this->files_named_by( $test_file ) );
@@ -112,6 +116,47 @@ final class Affected_Tests {
 		sort( $selected );
 
 		return $selected;
+	}
+
+	/**
+	 * The words a test file must hold to be worth parsing: the short name of every class, alias and
+	 * function that reads a changed file, and the coverage attributes that name code without naming a
+	 * class (a namespace, a file, a folder, every subclass or implementer).
+	 *
+	 * @param string[] $changed Real paths.
+	 *
+	 * @return array<string, true> Lowercase.
+	 */
+	private function words_reaching( array $changed ) {
+		$listed = array();
+		foreach ( $changed as $file ) {
+			if ( isset( $this->source[ $file ] ) ) {
+				$listed[] = $this->source[ $file ];
+			}
+		}
+		$words = array_fill_keys( $this->index->names_reaching( $listed ), true );
+		foreach ( array( 'Covers', 'Uses' ) as $prefix ) {
+			foreach ( array( 'Namespace', 'File', 'Directory', 'DirectoryRecursively', 'ClassesThatExtendClass', 'ClassesThatImplementInterface' ) as $kind ) {
+				$words[ strtolower( $prefix . $kind ) ] = true;
+			}
+		}
+
+		return $words;
+	}
+
+	/**
+	 * Whether a test file's code holds one of the words: a test that names none of them cannot reach a
+	 * changed file, so it is not parsed. Class and function names are case-insensitive in PHP.
+	 *
+	 * @param string              $code
+	 * @param array<string, true> $words Lowercase.
+	 *
+	 * @return bool
+	 */
+	private static function may_reach( $code, array $words ) {
+		preg_match_all( '/[a-z_\x80-\xff][a-z0-9_\x80-\xff]*/', strtolower( $code ), $match );
+
+		return ! empty( array_intersect_key( array_flip( $match[0] ), $words ) );
 	}
 
 	/**

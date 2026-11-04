@@ -375,6 +375,53 @@ final class Source_Index {
 	}
 
 	/**
+	 * The short names a test's code must contain to reach any of these files: every class, trait,
+	 * interface or enum whose own file, parents' or traits' files are among them (files_of_class()), the
+	 * class_alias() names of those, and the functions declared in them.
+	 *
+	 * @param string[] $files Paths as the index holds them.
+	 *
+	 * @return string[] Lowercase.
+	 */
+	public function names_reaching( array $files ) {
+		$wanted  = array_fill_keys( $files, true );
+		$names   = array();
+		$reached = array();
+		foreach ( $this->classes as $key => $class ) {
+			foreach ( $this->files_of_class( $key ) as $file ) {
+				if ( isset( $wanted[ $file ] ) ) {
+					$reached[ $key ] = true;
+					$names[]         = self::short_name( $class['name'] );
+					break;
+				}
+			}
+		}
+		foreach ( $this->aliases as $alias => $original ) {
+			if ( isset( $reached[ strtolower( ltrim( $original, '\\' ) ) ] ) ) {
+				$names[] = self::short_name( $alias );
+			}
+		}
+		foreach ( $this->function_files as $key => $file ) {
+			if ( isset( $wanted[ $file ] ) ) {
+				$names[] = self::short_name( $key );
+			}
+		}
+
+		return array_values( array_unique( $names ) );
+	}
+
+	/**
+	 * @param string $name A class or function name, namespaced or not.
+	 *
+	 * @return string Its last segment, lowercase.
+	 */
+	private static function short_name( $name ) {
+		$parts = explode( '\\', ltrim( $name, '\\' ) );
+
+		return strtolower( (string) end( $parts ) );
+	}
+
+	/**
 	 * A class and every class below it (CoversClassesThatExtendClass), with what each one reads.
 	 *
 	 * @param string $class
