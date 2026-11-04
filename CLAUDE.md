@@ -61,7 +61,12 @@ composer test:kernel
 
 # From a consuming plugin: its test scripts (unit-tests, unit-tests:parallel, mutate, ...) run the kernel
 composer unit-tests
+
+# Only the tests a change reaches (a pull request's CI): a PHPUnit config listing them
+git diff --name-only origin/pre-release... | bin/wp-test-kernel affected tests/wpunit --changed=- --config=phpunit.xml.dist --out=phpunit.affected.xml
 ```
+
+`wp-test-kernel affected` (`Tools\Affected_Tests`) selects a test file when it changed, or when its coverage attributes (Covers*, Uses*) or its code name a changed source file, a class declared there (a parent brings its subclasses' tests) or a function declared there. A test that reaches the change only at run time (a hook, a registry) is not selected; the whole suite is the check for those. Its header in `bin/wp-test-kernel` lists the options.
 
 A consuming plugin points PHPUnit's bootstrap at its own file, which calls the kernel's `Boot` with the plugin's profiles; Automator Free's `tests/bootstrap-wordpress.php` and its `docs/reference/testing.md` are the worked example.
 

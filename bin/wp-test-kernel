@@ -26,6 +26,16 @@
  *       report that has only short class names) => "New_Test" or "Ns\New_Test".
  *   wp-test-kernel order --from=<junit.xml> --config=<phpunit.xml> --out=<phpunit.order.xml>
  *       Write a PHPUnit config whose test suite lists files in the order the JUnit run executed them.
+ *   wp-test-kernel affected <dir|file>... --changed=<list> --config=<phpunit.xml> --out=<phpunit.affected.xml> [--also=<dir|file>,...]
+ *       Write a PHPUnit config whose test suite lists the test files (*Test.php) under <dir|file> that a
+ *       change reaches: a changed test file, and every test file whose coverage attributes (Covers*,
+ *       Uses*) or code name a changed source file, a class declared there (with its subclasses' tests)
+ *       or a function declared there. The source is the config's <source>. --changed is a file with one
+ *       changed path per line (`git diff --name-only`), relative to the working directory; - reads
+ *       stdin. --also adds folders or files to the suite as they are. Prints the selected files and
+ *       the changed source files no test names. Exit 0 whether or not a test is selected; with none,
+ *       nothing is written. A test reached only at run time (through a hook or a registry) is not
+ *       selected: the whole suite is the check for those.
  */
 
 foreach ( array( __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php' ) as $wp_test_kernel_autoload ) {
@@ -35,6 +45,7 @@ foreach ( array( __DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autol
 	}
 }
 
+use Uncanny_Owl\Wp_Test_Kernel\Tools\Affected_Tests;
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Attribute_Adder;
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Covers_Check;
 use Uncanny_Owl\Wp_Test_Kernel\Tools\Junit_Report;
@@ -232,30 +243,119 @@ function wp_test_kernel_order( array $options ) {
 		}
 	}
 
-	$files  = Junit_Report::read( (string) $options['from'] )['files'];
+	$files = Junit_Report::read( (string) $options['from'] )['files'];
+	wp_test_kernel_write_suite( (string) $options['config'], (string) $options['out'], 'ordered', $files, array() );
+	printf( "Wrote %s with %d files in run order.\n", $options['out'], count( $files ) );
+
+	return 0;
+}
+
+/**
+ * @param string[]                   $paths
+ * @param array<string, string|bool> $options
+ *
+ * @return int
+ */
+function wp_test_kernel_affected( array $paths, array $options ) {
+	foreach ( array( 'changed', 'config', 'out' ) as $required ) {
+		if ( empty( $options[ $required ] ) || true === $options[ $required ] || empty( $paths ) ) {
+			fwrite( STDERR, "affected needs <dir|file>... --changed=<list> --config=<phpunit.xml> --out=<phpunit.affected.xml>\n" );
+			return 2;
+		}
+	}
+	$list = '-' === $options['changed'] ? stream_get_contents( STDIN ) : @file_get_contents( (string) $options['changed'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- reported below.
+	if ( false === $list ) {
+		fwrite( STDERR, "Cannot read the changed-file list {$options['changed']}.\n" );
+		return 2;
+	}
+	$changed = array_values( array_filter( array_map( 'trim', explode( "\n", (string) $list ) ) ) );
+
+	try {
+		$affected = Affected_Tests::from_config( (string) $options['config'] );
+	} catch ( RuntimeException $e ) {
+		fwrite( STDERR, $e->getMessage() . "\n" );
+		return 2;
+	}
+
+	$tests = array();
+	foreach ( $paths as $path ) {
+		if ( is_file( $path ) ) {
+			$tests[] = $path;
+			continue;
+		}
+		if ( ! is_dir( $path ) ) {
+			continue;
+		}
+		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $path, FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $file ) {
+			if ( 'Test.php' === substr( $file->getFilename(), -8 ) ) {
+				$tests[] = $file->getPathname();
+			}
+		}
+	}
+
+	$selected = $affected->select( $tests, $changed );
+	$also     = empty( $options['also'] ) || true === $options['also'] ? array() : array_values( array_filter( explode( ',', (string) $options['also'] ), 'file_exists' ) );
+
+	foreach ( $selected as $file ) {
+		echo $file, PHP_EOL;
+	}
+	foreach ( $also as $path ) {
+		echo $path, ' (--also)', PHP_EOL;
+	}
+	$cwd = (string) realpath( (string) getcwd() ) . '/';
+	foreach ( $affected->unreached as $file ) {
+		echo 'No test names ', 0 === strpos( $file, $cwd ) ? substr( $file, strlen( $cwd ) ) : $file, PHP_EOL;
+	}
+
+	if ( empty( $selected ) && empty( $also ) ) {
+		printf( "No test file is reached by the %d changed files: nothing written.\n", count( $changed ) );
+		return 0;
+	}
+	wp_test_kernel_write_suite( (string) $options['config'], (string) $options['out'], 'affected', $selected, $also );
+	printf( "Wrote %s with %d test files and %d --also paths, of %d test files.\n", $options['out'], count( $selected ), count( $also ), count( $tests ) );
+
+	return 0;
+}
+
+/**
+ * Write a copy of a PHPUnit config whose one test suite lists these files and folders.
+ *
+ * @param string   $config_path The config to copy.
+ * @param string   $out         Where to write the copy.
+ * @param string   $name        The suite's name.
+ * @param string[] $files       Test files, in run order.
+ * @param string[] $directories Folders (or files) to add as they are.
+ *
+ * @return void
+ */
+function wp_test_kernel_write_suite( $config_path, $out, $name, array $files, array $directories ) {
 	$config = new DOMDocument();
 	$config->preserveWhiteSpace = false;
 	$config->formatOutput       = true;
-	$config->load( (string) $options['config'] );
+	$config->load( $config_path );
 
 	$suites = $config->getElementsByTagName( 'testsuites' )->item( 0 );
 	while ( $suites && $suites->firstChild ) {
 		$suites->removeChild( $suites->firstChild );
 	}
 
-	// The ordered suite replaces the config's suites, so a default suite named there would select nothing.
+	// The written suite replaces the config's suites, so a default suite named there would select nothing.
 	$config->documentElement->removeAttribute( 'defaultTestSuite' );
 
 	$suite = $config->createElement( 'testsuite' );
-	$suite->setAttribute( 'name', 'ordered' );
-	$out_dir = dirname( (string) realpath( dirname( (string) $options['out'] ) ) . '/x' );
+	$suite->setAttribute( 'name', $name );
+	$out_dir = dirname( (string) realpath( dirname( $out ) ) . '/x' );
 	foreach ( $files as $file ) {
-		$suite->appendChild( $config->createElement( 'file', wp_test_kernel_relative( $out_dir, $file ) ) );
+		$suite->appendChild( $config->createElement( 'file', wp_test_kernel_relative( $out_dir, (string) wp_test_kernel_absolute( $file ) ) ) );
+	}
+	foreach ( $directories as $path ) {
+		$suite->appendChild( $config->createElement( is_dir( $path ) ? 'directory' : 'file', wp_test_kernel_relative( $out_dir, (string) wp_test_kernel_absolute( $path ) ) ) );
 	}
 	$suites->appendChild( $suite );
 
-	// The ordered config lives elsewhere: keep its other relative paths pointing where they did.
-	$config_dir = dirname( (string) realpath( (string) $options['config'] ) );
+	// The written config lives elsewhere: keep its other relative paths pointing where they did.
+	$config_dir = dirname( (string) realpath( $config_path ) );
 	$rebase     = static function ( $path ) use ( $config_dir, $out_dir ) {
 		if ( '' === $path || '/' === $path[0] || preg_match( '#^[a-z][a-z0-9+.-]*://#i', $path ) ) {
 			return $path;
@@ -272,10 +372,23 @@ function wp_test_kernel_order( array $options ) {
 		$node->nodeValue = $rebase( trim( (string) $node->nodeValue ) );
 	}
 
-	$config->save( (string) $options['out'] );
-	printf( "Wrote %s with %d files in run order.\n", $options['out'], count( $files ) );
+	$config->save( $out );
+}
 
-	return 0;
+/**
+ * A path made absolute against the working directory, without resolving links.
+ *
+ * @param string $path
+ *
+ * @return string
+ */
+function wp_test_kernel_absolute( $path ) {
+	$real = realpath( $path );
+	if ( false !== $real ) {
+		return $real;
+	}
+
+	return '/' === substr( $path, 0, 1 ) ? $path : getcwd() . '/' . $path;
 }
 
 /**
@@ -306,7 +419,9 @@ switch ( $argv[1] ?? '' ) {
 		exit( wp_test_kernel_parity( $wp_test_kernel_options ) );
 	case 'order':
 		exit( wp_test_kernel_order( $wp_test_kernel_options ) );
+	case 'affected':
+		exit( wp_test_kernel_affected( $wp_test_kernel_positional, $wp_test_kernel_options ) );
 	default:
-		fwrite( STDERR, "Usage: wp-test-kernel attributes|parity|order (see the header of this file)\n" );
+		fwrite( STDERR, "Usage: wp-test-kernel attributes|covers-check|parity|order|affected (see the header of this file)\n" );
 		exit( 2 );
 }
