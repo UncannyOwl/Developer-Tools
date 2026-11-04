@@ -201,6 +201,54 @@ class Plugin_Check_Test extends TestCase {
 		$this->assertNull( $r['report']['baseline'] );
 	}
 
+	// ---------------------------------------------------------------- a pull request's files
+
+	/**
+	 * @param string[] $paths
+	 *
+	 * @return string A temp file listing the paths, one per line.
+	 */
+	private function file_list( array $paths ) {
+		$file = sys_get_temp_dir() . '/pc-files-' . bin2hex( random_bytes( 4 ) ) . '.txt';
+		file_put_contents( $file, implode( "\n", $paths ) . "\n" );
+		return $file;
+	}
+
+	public function test_files_gate_every_error_in_the_listed_files_with_no_baseline() {
+		$list = $this->file_list( array( 'src/b.php', 'tests/b_Test.php' ) );
+		$r    = $this->gate( 'clean', '--files ' . escapeshellarg( $list ) );
+		unlink( $list );
+		$this->assertSame( 1, $r['exit'], $r['raw'] );
+		$this->assertSame( 1, $r['report']['summary']['new_errors'], 'the baseline allows this error, but a pull request gate has no baseline' );
+		$this->assertSame( array( 'src/b.php' ), array_values( array_unique( array_column( $r['report']['findings'], 'path' ) ) ), 'findings outside the listed files are left out' );
+		$this->assertNull( $r['report']['baseline'] );
+	}
+
+	public function test_files_without_errors_pass() {
+		$list = $this->file_list( array( './src/c.php', 'src/c.php', '' ) );
+		$r    = $this->gate( 'clean', '--files ' . escapeshellarg( $list ) );
+		unlink( $list );
+		$this->assertSame( 0, $r['exit'], $r['raw'] );
+		$this->assertSame( 0, $r['report']['summary']['new_errors'] );
+		$this->assertSame( 1, $r['report']['summary']['ignored'], 'the config\'s ignores still apply' );
+	}
+
+	public function test_files_with_no_findings_pass() {
+		$list = $this->file_list( array( 'src/untouched-by-plugin-check.php' ) );
+		$r    = $this->gate( 'new-errors', '--files ' . escapeshellarg( $list ) );
+		unlink( $list );
+		$this->assertSame( 0, $r['exit'], $r['raw'] );
+		$this->assertSame( array(), $r['report']['findings'] );
+	}
+
+	public function test_files_and_update_baseline_is_a_usage_error() {
+		$list = $this->file_list( array( 'src/a.php' ) );
+		$r    = $this->gate( 'clean', '--update-baseline --files ' . escapeshellarg( $list ) );
+		unlink( $list );
+		$this->assertSame( 2, $r['exit'] );
+		$this->assertStringContainsString( 'no baseline', $r['raw'] );
+	}
+
 	// ---------------------------------------------------------------- usage errors
 
 	public function test_an_ignore_without_a_reason_is_a_usage_error() {
@@ -233,6 +281,33 @@ class Plugin_Check_Test extends TestCase {
 		$this->assertSame( array(), pc_decode_output( "Success: Checks complete. No errors found.\n" ) );
 		$this->assertSame( array(), pc_decode_output( '[]' ) );
 		$this->assertNull( pc_decode_output( 'PHP Fatal error: …' ) );
+	}
+
+	public function test_a_file_list_reads_one_path_a_line() {
+		$this->assertSame(
+			array( 'src/a.php', 'src/b.php', 'readme.txt' ),
+			pc_parse_file_list( "src/a.php\r\n./src/b.php\n\n  src/a.php  \n/readme.txt\n" )
+		);
+		$this->assertSame( array( 'src/w.php' ), pc_parse_file_list( "src\\w.php" ) );
+	}
+
+	public function test_only_listed_files_that_ship_are_checked() {
+		$root = sys_get_temp_dir() . '/pc-ship-' . bin2hex( random_bytes( 4 ) );
+		mkdir( "$root/src", 0700, true );
+		touch( "$root/src/a.php" );
+		$shipped = pc_shipped_paths( array( 'src/a.php', 'tests/a_Test.php', 'src/deleted.php', 'src' ), $root );
+		exec( 'rm -rf ' . escapeshellarg( $root ) );
+		$this->assertSame( array( 'src/a.php' ), $shipped );
+	}
+
+	public function test_keep_paths_keeps_only_the_given_files() {
+		$rows = array(
+			array( 'path' => 'src/a.php', 'code' => 'x' ),
+			array( 'path' => 'src/b.php', 'code' => 'y' ),
+			array( 'path' => '', 'code' => 'z' ),
+		);
+		$this->assertSame( array( array( 'path' => 'src/b.php', 'code' => 'y' ) ), pc_keep_paths( $rows, array( 'src/b.php' ) ) );
+		$this->assertSame( array(), pc_keep_paths( $rows, array() ) );
 	}
 
 	public function test_partition_spreads_slow_checks_over_jobs() {

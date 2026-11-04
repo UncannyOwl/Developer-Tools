@@ -18,6 +18,8 @@
  *   php bin/plugin-check.php --plugin-path . --zip zip-package/foo.zip --wp-path … --format=github --summary-file "$GITHUB_STEP_SUMMARY"
  *   php bin/plugin-check.php --plugin-path . --build --wp-path … --update-baseline
  *   php bin/plugin-check.php --plugin-path . --results saved.json           (gate a saved run again)
+ *   php bin/plugin-check.php --plugin-path . --build --files pr-files.txt --categories plugin_repo,security,general
+ *                                                                          (a pull request's gate: its shipped files, no baseline)
  *
  * Options:
  *   --plugin-path PATH   Plugin checkout holding .plugin-check/config.json and baseline.json (default: cwd)
@@ -35,6 +37,9 @@
  *   --summary-file FILE  Append a Markdown summary (for $GITHUB_STEP_SUMMARY)
  *   --format FORMAT      text (default) | json | github
  *   --strict             Also fail when baselined errors no longer occur, so the baseline only shrinks
+ *   --files FILE         Check only the files FILE lists (one path per line, relative to the plugin, as a pull
+ *                        request lists its changed files) that ship, and gate every error in them: no baseline
+ *   --categories LIST    Only these Plugin Check categories, e.g. plugin_repo,security,general
  *
  * Exit codes: 0 no new errors, 1 new errors, 2 usage or environment error.
  */
@@ -59,6 +64,8 @@ function pc_parse_args( array $argv ) {
 		'baseline'        => '',
 		'save-results'    => '',
 		'summary-file'    => '',
+		'files'           => '',
+		'categories'      => '',
 		'format'          => 'text',
 		'update-baseline' => false,
 		'build'           => false,
@@ -68,7 +75,7 @@ function pc_parse_args( array $argv ) {
 	$n    = count( $argv );
 	for ( $i = 1; $i < $n; $i++ ) {
 		$a = $argv[ $i ];
-		if ( preg_match( '~^--(plugin-path|zip|dir|results|wp-path|wp|jobs|config|baseline|save-results|summary-file|format)(?:=(.*))?$~s', $a, $m ) ) {
+		if ( preg_match( '~^--(plugin-path|zip|dir|results|wp-path|wp|jobs|config|baseline|save-results|summary-file|files|categories|format)(?:=(.*))?$~s', $a, $m ) ) {
 			$opts[ $m[1] ] = isset( $m[2] ) ? $m[2] : ( isset( $argv[ $i + 1 ] ) ? $argv[ ++$i ] : '' );
 		} elseif ( in_array( $a, array( '--update-baseline', '--build', '--strict', '--help', '-h' ), true ) ) {
 			$opts[ '-h' === $a ? 'help' : substr( $a, 2 ) ] = true;
@@ -184,6 +191,39 @@ function pc_unzip( $zip ) {
 }
 
 /**
+ * Copy the given files out of the shipped folder into a folder of their own, beside the main plugin
+ * file and readme.txt, which Plugin Check needs to see a plugin there. Removed when the process ends.
+ *
+ * @param string   $root  The shipped plugin folder.
+ * @param string   $slug  Plugin slug: the folder name and the main file's name.
+ * @param string[] $paths Files in $root (pc_shipped_paths).
+ *
+ * @return string The new plugin folder (its real path, as pc_unzip returns).
+ */
+function pc_stage_paths( $root, $slug, array $paths ) {
+	$tmp = rtrim( sys_get_temp_dir(), '/' ) . '/plugin-check-files-' . getmypid() . '-' . bin2hex( random_bytes( 4 ) );
+	$dir = $tmp . '/' . $slug;
+	if ( ! mkdir( $dir, 0700, true ) ) {
+		pc_fail( "cannot create $dir" );
+	}
+	register_shutdown_function(
+		function () use ( $tmp ) {
+			exec( 'rm -rf ' . escapeshellarg( $tmp ) );
+		}
+	);
+	foreach ( array_unique( array_merge( array( $slug . '.php', 'readme.txt' ), $paths ) ) as $path ) {
+		if ( ! is_file( $root . '/' . $path ) ) {
+			continue;
+		}
+		if ( ! is_dir( dirname( $dir . '/' . $path ) ) ) {
+			mkdir( dirname( $dir . '/' . $path ), 0700, true );
+		}
+		copy( $root . '/' . $path, $dir . '/' . $path );
+	}
+	return realpath( $dir );
+}
+
+/**
  * @param array  $opts
  * @param string $args WP-CLI arguments after the command.
  *
@@ -238,7 +278,8 @@ function pc_run_plugin_check( array $opts, array $config, $dir ) {
 		. ' --slug=' . escapeshellarg( $config['slug'] )
 		. ' --mode=' . escapeshellarg( isset( $config['mode'] ) ? $config['mode'] : 'new' )
 		. ' --format=strict-json --fields=file,line,column,type,code,message,docs,severity'
-		. ' --skip-plugins=' . escapeshellarg( $config['slug'] );
+		. ' --skip-plugins=' . escapeshellarg( $config['slug'] )
+		. ( '' !== $opts['categories'] ? ' --categories=' . escapeshellarg( $opts['categories'] ) : '' );
 	$path_flags = array(
 		'exclude_directories' => 'exclude-directories',
 		'exclude_files'       => 'exclude-files',
@@ -301,6 +342,19 @@ if ( empty( $config['slug'] ) ) {
 }
 $baseline = pc_read_json( $baseline_file, false );
 
+// A pull request's gate: only the files it changes, and every error in them counts.
+$listed = null;
+if ( '' !== $opts['files'] ) {
+	if ( ! is_file( $opts['files'] ) ) {
+		pc_fail( "no file list at {$opts['files']}" );
+	}
+	if ( $opts['update-baseline'] ) {
+		pc_fail( '--files checks a pull request\'s files against no baseline; --update-baseline needs the whole plugin' );
+	}
+	$listed   = pc_parse_file_list( (string) file_get_contents( $opts['files'] ) );
+	$baseline = array();
+}
+
 $started = microtime( true );
 $version = '';
 if ( '' !== $opts['results'] ) {
@@ -335,16 +389,27 @@ if ( '' !== $opts['results'] ) {
 	if ( ! is_file( $root . '/' . $config['slug'] . '.php' ) ) {
 		fwrite( STDERR, "plugin-check: warning: no {$config['slug']}.php in $root\n" );
 	}
-	$probe = pc_run_parallel( array( pc_wp_command( $opts, 'plugin get plugin-check --field=version' ) ) )[0];
-	if ( 0 !== $probe['code'] ) {
-		pc_fail( "plugin-check is not installed in the WordPress at '{$opts['wp-path']}' (wp plugin install plugin-check --activate):\n" . trim( $probe['err'] ) );
-	}
-	$version = trim( $probe['out'] );
-	$items   = pc_run_plugin_check( $opts, $config, $root );
 	$checked = $root;
+	$items   = array();
+	if ( null !== $listed ) {
+		$listed  = pc_shipped_paths( $listed, $root );
+		$source .= ', ' . count( $listed ) . ' shipped file' . ( 1 === count( $listed ) ? '' : 's' ) . " listed in {$opts['files']}";
+		$root    = array() !== $listed ? pc_stage_paths( $root, $config['slug'], $listed ) : $root;
+	}
+	if ( null === $listed || array() !== $listed ) {
+		$probe = pc_run_parallel( array( pc_wp_command( $opts, 'plugin get plugin-check --field=version' ) ) )[0];
+		if ( 0 !== $probe['code'] ) {
+			pc_fail( "plugin-check is not installed in the WordPress at '{$opts['wp-path']}' (wp plugin install plugin-check --activate):\n" . trim( $probe['err'] ) );
+		}
+		$version = trim( $probe['out'] );
+		$items   = pc_run_plugin_check( $opts, $config, $root );
+	}
 }
 
 $rows = pc_normalize( $items, array( $root, (string) realpath( $root ) ) );
+if ( null !== $listed ) {
+	$rows = pc_keep_paths( $rows, $listed );
+}
 if ( '' !== $opts['save-results'] ) {
 	$saved = array(
 		'plugin_check_version' => $version,
