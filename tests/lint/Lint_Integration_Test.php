@@ -240,6 +240,24 @@ class Lint_Integration_Test extends TestCase {
 		$this->assertSame( 'P1', $f['severity'] );
 	}
 
+	public function test_app_integration_needs_no_plugin_file_path() {
+		$this->assertFileExists( self::FIXTURES . '/app-manifest/free/src/integrations/foo-app/foo-app-integration.php' );
+		$r    = $this->run_lint( 'app-manifest', 'foo-app' );
+		$hits = array_filter( $r['report']['findings'], fn( $f ) => 'L-manifest' === $f['check'] );
+		$this->assertEmpty( $hits, 'an app integration has no plugin file to point at' );
+	}
+
+	public function test_app_integration_still_needs_its_other_setters() {
+		$r = $this->run_lint( 'app-manifest', 'bad-app' );
+		$this->assertNotNull( $this->finding( $r['report'], 'L-manifest', 'free/src/integrations/bad-app', 'set_developer_name' ) );
+		$this->assertNull( $this->finding( $r['report'], 'L-manifest', 'free/src/integrations/bad-app', 'set_plugin_file_path' ) );
+	}
+
+	public function test_plugin_integration_without_plugin_file_path_is_flagged() {
+		$r = $this->run_lint( 'app-manifest', 'fileless-plugin' );
+		$this->assertNotNull( $this->finding( $r['report'], 'L-manifest', 'free/src/integrations/fileless-plugin', 'set_plugin_file_path' ) );
+	}
+
 	public function test_open_source_distribution_is_flagged() {
 		$r = $this->run_lint( 'dirty', 'bad-plugin' );
 		$this->assert_flagged( $r['report'], 'L-manifest', 'P1', 'free/src/integrations/bad-plugin/bad-plugin-integration.php' );
