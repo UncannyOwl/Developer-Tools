@@ -522,7 +522,8 @@ function lint_check_active( Lint_Context $ctx ) {
 }
 
 /**
- * L-manifest (R19): the four metadata setters, identical in Free and Pro, never open_source.
+ * L-manifest (R19): the four metadata setters, identical in Free and Pro, never open_source. An app
+ * integration (`set_integration_type( 'app' )`) has no plugin file, so it needs no set_plugin_file_path().
  *
  * @param Lint_Context $ctx
  *
@@ -533,8 +534,12 @@ function lint_check_manifest( Lint_Context $ctx ) {
 	$setters = array( 'set_plugin_file_path', 'set_developer_name', 'set_integration_type', 'set_distribution_type' );
 	$values  = array();
 	foreach ( $ctx->dirs() as $dir ) {
-		$files = $ctx->integration_files( $dir );
+		$files  = $ctx->integration_files( $dir );
+		$is_app = ! empty( $ctx->grep( "set_integration_type\( *'app'", $files ) );
 		foreach ( $setters as $setter ) {
+			if ( $is_app && 'set_plugin_file_path' === $setter ) {
+				continue;
+			}
 			$hits = $ctx->grep( $setter . "\( *'[^']*'", $files );
 			if ( empty( $hits ) ) {
 				$out[] = new Lint_Finding( 'L-manifest', 'R19', 'P1', $dir, 0, "setup() lacks $setter()" );
